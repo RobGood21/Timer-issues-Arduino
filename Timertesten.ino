@@ -73,20 +73,21 @@ void PHASECORRECT() {
 	//Eerst Pinnen aanzetten, pin 9 en 10 standaard al gedefinieerd.
 	DDRB |= (1 << DDB2); // pinMode(10, OUTPUT);
 	DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
-	//TCCR1A – Timer/Counter1 Control Register A set beide COM1A0/COM1B0 voor toggle (omschakelen) bij bereiken Compare match.
-
+	//TCCR1A – Timer/Counter1 Control Register A set beide COM1A0 COM1B0 voor toggle (omschakelen) bij bereiken Compare match.
+	TCCR1A |= (1 << COM1A0); TCCR1A |= (1 << COM1B0);
 }
 
 void setup()
 {
+
+	PHASECORRECT();
+
 	// COMPARE();
 	// OVERLOOP();
 	// pin 9 is bit 2 in port b dus ... erg langzaam, 
 	// pinMode(9, OUTPUT);  of 
-	
-	
-	DDRB |= (1 << DDB2); // pinMode(10, OUTPUT);
-	DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
+	//DDRB |= (1 << DDB2); // pinMode(10, OUTPUT);
+	//DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
 
 
     //DDRB |= B00000010; // of decimaal of met deze rare constructie blijkbaar hebben de bits een aanwijsbaar alias
