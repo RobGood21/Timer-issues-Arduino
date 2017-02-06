@@ -37,6 +37,8 @@ Output Compare pin (OC1A/B) OC1A=PB1=PIN9 OC1B=PB2=PIN10 (PIN 9 en 10 als output
 Compare Match Flag (OCF1A/B)
 Input Capture pin (ICP1)
 
+prescaler TCCR1B  bit2, CS12  bit1, CS11  bit0, CS10 1=001 8=010 64=011 256=100 1024=101
+
 
 Bewerkekn van registers.
 EECR = EECR | (1<<EEWE)
@@ -67,26 +69,114 @@ void OVERLOOP() {
 		TIMSK1 |= (1 << TOIE1);   // enable timer overflow interrupt
 		interrupts();             // enable all interrupts
 	}
-void PHASECORRECT() {
+void TIMERTEST() {
 	//Timer gebruik met phase correct
 	//Void hoeft maar 1x uitgevoerd te worden in set up dus pinnen kunnen hier worden gedefinieerd
 	//Eerst Pinnen aanzetten, pin 9 en 10 standaard al gedefinieerd.
-	DDRB |= (1 << DDB2); // pinMode(10, OUTPUT);
-	DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
+
+
+	//Compare Output Mode, Phase Correct and Phase and Frequency Correct PWM(1)
+	//Set in TCCR1A beide COM1A0 en COM1B0
 	//TCCR1A – Timer/Counter1 Control Register A set beide COM1A0 COM1B0 voor toggle (omschakelen) bij bereiken Compare match.
-	TCCR1A |= (1 << COM1A0); TCCR1A |= (1 << COM1B0);
+
+	// Bit 1:0 – WGM11 : 0 : Waveform Generation Mode sets samen met TCCR1B. deze mode... hier kiezen voor mode
+	//WGM13 1=TCCR1B bit4, WGM12 0=TCCR1B bit3, WGM11 1=TCCRA1 bit1, WGM10 1 =TCCRA1 bit0,
+	//mode CTC 4 set WGM12
+	//TCCR1A = 0; //initialiseren voor de zekerheid...
+	//TCCR1B |= (1 << WGM13),
+
+	//TCCR1A |= (1 << WGM12); //TCCR1A |= (1 << WGM11); TCCR1A |= (1 << WGM10);
+		
+	//TCCR1A |= (1 << COM1A0); TCCR1A |= (1 << COM1B0); 
+	
+	//TCCR1A |= (1 << COM1A1); TCCR1B |= (1 << COM1B1);
+
+
+	
+	
+	//TCCR1B – Timer/Counter1 Control Register B 
+	//prescaler even max zetten om de leds te kunnen zien knipperen, dus prescaler naar 1024 dus set CS12 en CS10
+			//TCCR1B |= (1 << CS12); TCCR1B |= (1 << CS10);
+	
+	//16.11.3 TCCR1C – Timer/Counter1 Control Register C niet duidelijk of hier iets buikbaars bij is.
+	//TCNT1H and TCNT1L – Timer/Counter1 de feitelijk counter, voor timer 1 16bits, timer 0 en 2 alleen 1 byte
+	// bij voorkeur iets verzinnen dat deze timer niet opnieuw hoeft in te stellen, we kiezen 232, geeft gewenste tijd 116 micros  bij prescaler 8
+	
+	//TCNT1 = 6000;
+	
+
+	//OCR1AH and OCR1AL – Output Compare Register 1 A ;//vergelijk met waarde counter kanaal A
+	//OCR1A = 3125;
+	//OCR1B = 1160;
+
+	//OCR1BH and OCR1BL – Output Compare Register 1 B ; //vergelijk met waarde counter kanaal B
+	//ICR1H and ICR1L – Input Capture Register 1 
+
+	//TIMSK1 – Timer/Counter1 Interrupt Mask Register
+	//bit5=ICIE1 (enabled input interrupt) bit2=OCIE1B (enabled Output Compare B Match interrupt)  bit1 = OCIE1A (enabled Output Compare A Match interrupt) 
+	//bit0=TOIE1 (enabled Timer/Counter1 Overflow interrupt)
+	//TIFR1 – Timer/Counter1 Interrupt Flag Register bit5=ICF1  bit2=OCF1B bit1=OCF1A bit0=TOV1
+	//PIN als output
+
+
+	//Portten als output instellen
+	DDRB |= (1 << DDB0); // pinMode(8, OUTPUT);
+	DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
+	DDRB |= (1 << DDB2);
+	
+	
+	noInterrupts(); //ff tegenhouden
+	
+	//PORTB |= (1 << PORTB1);
+	//prescaler instellen
+
+	//TCCR1A = 0;
+	//TCCR1B = 0;
+
+	TCCR1A = 0;
+	TCCR1B = 0;
+	
+
+	TCCR1B |= (1 << CS12); // prescaler op 256 TCCR1B | (1 << CS10);
+	TCCR1B |= (1 << WGM12); //CTC mode		
+	
+	OCR1A = 40000; //timer kanaal A
+	OCR1B = 20000; //timer kanaal B
+	TCNT1 = 0;
+	TIMSK1 |= (1 << TOIE1);TIMSK1 |= (1 << OCIE1A);TIMSK1 |= (1 << OCIE1B); // interrupts toestaan
+
+	interrupts();
+	
 }
+
+void VOORBEELD() {
+	
+		pinMode(8, OUTPUT);
+
+		// initialize timer1 
+		noInterrupts();           // disable all interrupts
+		TCCR1A = 0;
+		TCCR1B = 0;
+		TCNT1 = 0;
+
+		OCR1A = 31250;            // compare match register 16MHz/256/2Hz
+		TCCR1B |= (1 << WGM12);   // CTC mode
+		TCCR1B |= (1 << CS12);    // 256 prescaler 
+		TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
+		interrupts();             // enable all interrupts
+	}
+
 
 void setup()
 {
 
-	PHASECORRECT();
-
+	TIMERTEST();
+	//VOORBEELD();
 	// COMPARE();
 	// OVERLOOP();
 	// pin 9 is bit 2 in port b dus ... erg langzaam, 
 	// pinMode(9, OUTPUT);  of 
-	//DDRB |= (1 << DDB2); // pinMode(10, OUTPUT);
+	
 	//DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
 
 
@@ -114,19 +204,28 @@ void COMPARE() {
 	interrupts();
 }
 
+
+
 ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
+//If the interrupt is enabled, the interrupt handler routine can be used for updating the TOP value.
+// dus hiermee een 1 of een 0 als volgende bit in te stellen???
 {
-	digitalWrite(10, digitalRead(10) ^ 1);   // toggle LED pin
+PORTB ^= (1 << PORTB0);
+}
+
+ISR(TIMER1_COMPB_vect) {
+PORTB ^= (1 << PORTB1);
+
 }
 
 ISR(TIMER1_OVF_vect) {
-	TCNT1 = 0;
-	digitalWrite(9, digitalRead(9) ^ 1);   // toggle LED pin
+	PORTB = (1 << PORTB2);
+
 }
 
 void TOGGLE() {
 	// met PINB register leds omschakelen
-	bitSet(PINB, PINB1);bitSet(PINB, PINB2);
+	//bitSet(PINB, PINB1);bitSet(PINB, PINB2);
 }
 
 void loop()
@@ -144,6 +243,7 @@ void loop()
 	//PORTB = B00000100;
 	//bitSet(PORTB, PORTB2); bitClear(PORTB, PORTB1);
 	//TOGGLE();
+	//PORTB ^= (1 << PORTB1);
 	//delay(1000); 
 	
 }
