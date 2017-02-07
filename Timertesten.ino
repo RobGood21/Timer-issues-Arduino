@@ -47,28 +47,20 @@ EECR = EECR | (1<<EEWE)
 (Registernaam) PORTB   |= B00000010  zet bit1 van PORTB  of  DDRB &=B11111101 zet bit1 laag... andere bits worden niet veranderd.
 of 	bitSet (PORTB,PORTB1);
 
-
+GPIOR0 – General Purpose I/O Register 0
+GPIOR1  8bits 
+GPIOR2
 
 Altenatieve functies van belang: datasheet ATMEL 14.3.1 Alternate Functions of Port B
 
 */
 
-#define ledPin 10
 
-void OVERLOOP() {
 
-		pinMode(9, OUTPUT);
+//DECLARTATIES
+//voor Registers
+byte registertest;
 
-		// initialize timer1 
-		noInterrupts();           // disable all interrupts
-		TCCR1A = 0;
-		TCCR1B = 0;
-
-		TCNT1 = 34286;            // preload timer 65536-16MHz/256/2Hz
-		TCCR1B |= (1 << CS12);    // 256 prescaler 
-		TIMSK1 |= (1 << TOIE1);   // enable timer overflow interrupt
-		interrupts();             // enable all interrupts
-	}
 void TIMERTEST() {
 	//Timer gebruik met phase correct
 	//Void hoeft maar 1x uitgevoerd te worden in set up dus pinnen kunnen hier worden gedefinieerd
@@ -119,6 +111,7 @@ void TIMERTEST() {
 	//PIN als output
 
 
+
 	//Portten als output instellen
 	DDRB |= (1 << DDB0); // pinMode(8, OUTPUT);
 	DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
@@ -135,15 +128,15 @@ void TIMERTEST() {
 
 	TCCR1A = 0;
 	TCCR1B = 0;
-	
+	TCCR1A |= (1 << COM1A0);// TCCR1A |= (1 << COM1B0);// gebruikt pin 9 en 10 als output
 
 	TCCR1B |= (1 << CS12); // prescaler op 256 TCCR1B | (1 << CS10);
 	TCCR1B |= (1 << WGM12); //CTC mode		
 	
-	OCR1A = 40000; //timer kanaal A
-	OCR1B = 20000; //timer kanaal B
+	OCR1A = 50000; //timer kanaal A
+	OCR1B = 10000; //timer kanaal B
 	TCNT1 = 0;
-	TIMSK1 |= (1 << TOIE1);TIMSK1 |= (1 << OCIE1A);TIMSK1 |= (1 << OCIE1B); // interrupts toestaan
+	// TIMSK1 |= (1 << TOIE1);TIMSK1 |= (1 << OCIE1A);TIMSK1 |= (1 << OCIE1B); // interrupts toestaan
 
 	interrupts();
 	
@@ -166,11 +159,34 @@ void VOORBEELD() {
 		interrupts();             // enable all interrupts
 	}
 
+void TRAIN() { //set timer en outputs, de trein van datapulsen
+	DDRB |= (1 << DDB1);
+	DDRB |= (1 << DDB2);
+	noInterrupts(); //interrupts tijdelijk ondebreken
+	TCCR1A = 0; //initialiseer register NODIG!
+	TCCR1B = 0; //initialiseer register NODIG!
+	TCCR1B |= (1 << WGM12); //CTC mode	
+	TCCR1B |= (1 << CS12); //zet prescaler (256?)
+	OCR1A = 62500;//zet TOP waarde counter bij prescaler 256 1sec
+	TCNT1 = 0; //set timer1 op 0 BOTTOM waarde counter
+	TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, bij true toggle output
+	TIMSK1 |= (1 << OCIE1A); //inerrupt op bereiken TOPwaarde
+	interrupts(); //interupts weer toestaan
+}
+ISR(TIMER1_COMPA_vect)  
+// timer compare interrupt service routine
+//If the interrupt is enabled, the interrupt handler routine can be used for updating the TOP value.
+// dus hiermee een 1 of een 0 als volgende bit in te stellen???
+{
+	PORTB ^= (PORTB1 << PORTB2); //Sets Port 2 (PIN10) opposit to PIN9 
+}
+
+
 
 void setup()
 {
-
-	TIMERTEST();
+	//TRAIN();
+	//TIMERTEST();
 	//VOORBEELD();
 	// COMPARE();
 	// OVERLOOP();
@@ -185,33 +201,38 @@ void setup()
 	//voor toggle bij start
 	//bitSet (PORTB, PORTB1);
 	//werkt ook, maar als er nu ergens een vautje onstaat bijft alle fout gaan tot reset
-	}
 
-void COMPARE() {
-	pinMode(10, OUTPUT);
-
-	// initialize timer1 
-	noInterrupts();           // disable all interrupts
-	TCCR1A = 0;
-	TCCR1B = 0;
-	TCNT1 = 0;
-
-	OCR1A = 31250;            // compare match register 16MHz/256/2Hz
-
-	TCCR1B |= (1 << WGM12);   // CTC mode
-	TCCR1B |= (1 << CS12);    // 256 prescaler 
-	TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
-	interrupts();
+registertest = B00000000;
+pinMode(8, OUTPUT);
+Serial.begin(9600);
 }
 
 
 
-ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
-//If the interrupt is enabled, the interrupt handler routine can be used for updating the TOP value.
-// dus hiermee een 1 of een 0 als volgende bit in te stellen???
-{
-PORTB ^= (1 << PORTB0);
+
+
+void REGISTERS() {
+	//kijken of een register als boolean kan worden gebruikt
+	// eerst ff met DATAtype BYTE
+	//BYTE in declareren
+	/*
+	registertest ^= (1 << 0);
+	delay(1000);
+	digitalWrite(8, bitRead(registertest, 0));
+	Serial.println(bitRead(registertest, 0));
+	*/
+	//of met register...?
+
+	GPIOR0 ^= (1 << 0); //toggle bit 0 in dit register....
+	delay(1000);
+	digitalWrite(8, bitRead(GPIOR0, 0));
+	
+
 }
+
+
+
+
 
 ISR(TIMER1_COMPB_vect) {
 PORTB ^= (1 << PORTB1);
@@ -245,6 +266,8 @@ void loop()
 	//TOGGLE();
 	//PORTB ^= (1 << PORTB1);
 	//delay(1000); 
+	REGISTERS();
+
 	
 }
 
