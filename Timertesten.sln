@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Timertesten", "Timertesten.
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DCC_Monitor", "..\..\..\Documents\Arduino\libraries\DCC_Decoder\examples\DCC_Monitor\DCC_Monitor.vcxproj", "{49BB6F5C-6285-4742-B52A-177D951020EC}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DCCtrain", "DCCtrain\DCCtrain.vcxproj", "{C5F80730-F44F-4478-BDAE-6634EFC2CA88}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -21,6 +23,10 @@ Global
 		{49BB6F5C-6285-4742-B52A-177D951020EC}.Debug|x86.Build.0 = Debug|Win32
 		{49BB6F5C-6285-4742-B52A-177D951020EC}.Release|x86.ActiveCfg = Release|Win32
 		{49BB6F5C-6285-4742-B52A-177D951020EC}.Release|x86.Build.0 = Release|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Debug|x86.ActiveCfg = Debug|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Debug|x86.Build.0 = Debug|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|x86.ActiveCfg = Release|Win32
+		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

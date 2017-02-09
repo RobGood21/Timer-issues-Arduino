@@ -202,7 +202,7 @@ void TRAIN() { //set timer en outputs, de trein van datapulsen
 	TCCR1B = 0; //initialiseer register NODIG!
 	TCCR1B |= (1 << WGM12); //CTC mode	
 	TCCR1B |= (1 << CS11); //CS12 zet prescaler (256?) CS11 voor prescaler 8
-	OCR1A=TTB; //zet TOP waarde counter bij prescaler 256 1sec (standard timing true bit)
+	OCR1A=116; //zet TOP waarde counter bij prescaler 256 1sec (standard timing true bit)
 	TCNT1 = 0; //set timer1 op 0 BOTTOM waarde counter
 	TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, bij true toggle output
 	TIMSK1 |= (1 << OCIE1A); //inerrupt op bereiken TOPwaarde
@@ -258,7 +258,7 @@ if (DEBUG == true) {
 }
 
 			if (bitRead(GPIOR2, 3) == true) { //Laatste byte interrupt = true, laatste byte is verzonden nu uitspringen
-				OCR1A = TTB; //timer op true bits
+				if (bitRead(OCR1AL, 7) == true) OCR1A = OCR1A/2;
 				bitClear(GPIOR2, 1); //COMMANDready naar false, dus GEEN command in behandeling, LOOP() zet deze weer true als een command in de byte registers is gezet.
 				CS = 0; //volgende doorlopp wachten op nieuw command..
 				GPIOR2 |= (1 << 4); //reset Bytefree register GPIOR0
@@ -269,7 +269,7 @@ if(DEBUG==true) Serial.println("Command ready");
 										
 			}
 			else {
-				OCR1A=TFB;
+				if (bitRead(OCR1AL, 7) == false) OCR1A = OCR1A*2;
 if (DEBUG==true) Serial.println("tussenbit");
 
 				CS = 3; //volgende doorloop naar byte verzenden.
@@ -297,11 +297,11 @@ if (DEBUG == true) {
 }
 
 				if (bitRead(GPIOR0, i) == true) {
-					OCR1A = TTB;
+					if (bitRead(OCR1AL, 7) == true) OCR1A = OCR1A/2;
 
 				}
 				else {
-					OCR1A = TFB;
+					if (bitRead(OCR1AL, 7) == false) OCR1A = OCR1A*2;
 
 				}
 
@@ -316,17 +316,16 @@ if (DEBUG == true) {
 	Serial.println(bitRead(GPIOR1, i));
 }
 				if (bitRead(GPIOR1, i) == true) {
-					OCR1A = TTB;
+					if (bitRead(OCR1AL, 7) == true) OCR1A = OCR1A/2;
 				}
 				else {
-					OCR1A = TFB;
+					if (bitRead(OCR1AL, 7) == false) OCR1A = OCR1A*2;
+					
 				}
 
 				i--;
 				if (i < 0) bitSet(GPIOR2, 5);				
-			}
-
-
+			}			
 			if (i < 0) {
 				GPIOR2 ^= (1 << 6); //toggle bytepointer				
 				CS = 2; //naar tussenbit
@@ -337,15 +336,13 @@ if(DEBUG==true)	Serial.println("Bytepointer getoggeld");
 			}
 
 	} //bit is niet klaar, gebeurt gewoon niks
-
-
-
+	
 	//ff ledje laten branden op deze toggle
 	//PORTB ^= (bitRead(GPIOR2, 0) << PORTB0); //  waarde van bit0 uit het flagregister kopieren naar DDB1 
 	//PORTB ^= (1 << PORTB0);
 }
 
-void TRAINLOOP() {
+void TRAINLOOP() { 
 	if (bitRead(GPIOR2, 1) == false) { //command ready false
 									   //zoek nieuw commando 
 									   //als geen commando te vinden... dan boolean NEWCOMMAND=false 
