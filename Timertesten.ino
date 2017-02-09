@@ -159,33 +159,245 @@ void VOORBEELD() {
 		interrupts();             // enable all interrupts
 	}
 
+
+//Decalarties voor void TRAIN()
+int BP = 0; //Bitpointer
+int CS = 0; //Commandstatus
+int i; //teller voor loop functies
+int TTB = 116; //Timer True Bit
+int TFB = 232; //Timer False bit
+//TRAINLOOP
+//declaraties tbv TRAIN() in LOOP()
+boolean NEWCOMMAND = false;
+byte AD = B11111111;
+byte DT = B00000000;
+byte ER = B11111111;
+int BC = 0; //=ByteCount Aantal verzonden bytes
+int BT = 3; //ByteTotal =aantal te verzenden bytes
+boolean BF;
+
+//xxxdeclaraties voor testen
+boolean DEBUG = false; //false; //toont alle teksten als true
+
+
+
 void TRAIN() { //set timer en outputs, de trein van datapulsen
+	//De General Purpose I/O Registers op nul stellen
+	GPIOR0 = 0; //NC
+	GPIOR1 = 0; //Active BYTE byte wat wordt verwerkt
+	GPIOR2 = 0; //Flags, booleans
+	//static int BP = 0; //bitpointer aanmaken kanniet BP aanmaken in declaraties.
+	BP = 7;
+
+	//***Aleen voor test fase
+	DDRB |= (1 << DDB0); //PIN 8 als output, alleen in test fase
+	GPIOR1 = B01111000; // even een actief byte definieren
+
+
+
 	DDRB |= (1 << DDB1);
 	DDRB |= (1 << DDB2);
 	noInterrupts(); //interrupts tijdelijk ondebreken
 	TCCR1A = 0; //initialiseer register NODIG!
 	TCCR1B = 0; //initialiseer register NODIG!
 	TCCR1B |= (1 << WGM12); //CTC mode	
-	TCCR1B |= (1 << CS12); //zet prescaler (256?)
-	OCR1A = 62500;//zet TOP waarde counter bij prescaler 256 1sec
+	TCCR1B |= (1 << CS11); //CS12 zet prescaler (256?) CS11 voor prescaler 8
+	OCR1A=TTB; //zet TOP waarde counter bij prescaler 256 1sec (standard timing true bit)
 	TCNT1 = 0; //set timer1 op 0 BOTTOM waarde counter
 	TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, bij true toggle output
 	TIMSK1 |= (1 << OCIE1A); //inerrupt op bereiken TOPwaarde
 	interrupts(); //interupts weer toestaan
 }
-ISR(TIMER1_COMPA_vect)  
+
+ISR(TIMER1_COMPA_vect)  {
 // timer compare interrupt service routine
-//If the interrupt is enabled, the interrupt handler routine can be used for updating the TOP value.
-// dus hiermee een 1 of een 0 als volgende bit in te stellen???
-{
 	PORTB ^= (PORTB1 << PORTB2); //Sets Port 2 (PIN10) opposit to PIN9 
+	GPIOR2 ^= (1 << 0); //toggle het BITPART deel, als BITPART=false dan is het bit klaar >> nieuw bit bepalen.
+
+	if (bitRead(GPIOR2, 0) == true) { //bit is klaar .. verder
+
+		switch (CS) { //CS=Commandstatus ) 0=Wacht op Command; 1=Preample zenden; 2=Tussenbit zenden; 3=Byte verzenden 
+		case 0: //Wacht
+			//Topwaarde wordt niet aangepast, timer gaat gewoon door met trues zenden	
+			//test Commandready
+
+if (DEBUG==true) Serial.println("wacht op COMMAND");
+			
+				if (bitRead(GPIOR2, 1) == true) //COMMANDready 
+			{
+				CS = 1; //na volgende true bit preample verzenden 
+				i = 0; //teller reset
+			}
+			break;// (0)
+
+		case 1: //send preample
+			//registers resetten
+			bitClear(GPIOR2, 3); // niet nodig?
+
+if (DEBUG == true) {
+	Serial.print("Preample: "); 
+	Serial.println(i);
+}
+			if (i < 14) {
+				i++;
+			}
+			else {
+				CS = 2; //15 true bits verzonden nu een false bit
+				i = 7; //teller al instellen voor 1e byte
+			//	Serial.println("");
+			}
+			break; //(1)
+
+		case 2: //send Tussenbit
+
+if (DEBUG == true) {
+	Serial.print("Laatstebyte LOOP():");	
+	Serial.print(bitRead(GPIOR2, 2)); 
+	Serial.print("    Laatste Byte interrupt:  "); 
+	Serial.println(bitRead(GPIOR2, 3));
 }
 
+			if (bitRead(GPIOR2, 3) == true) { //Laatste byte interrupt = true, laatste byte is verzonden nu uitspringen
+				OCR1A = TTB; //timer op true bits
+				bitClear(GPIOR2, 1); //COMMANDready naar false, dus GEEN command in behandeling, LOOP() zet deze weer true als een command in de byte registers is gezet.
+				CS = 0; //volgende doorlopp wachten op nieuw command..
+				GPIOR2 |= (1 << 4); //reset Bytefree register GPIOR0
+				GPIOR2 |= (1 << 5); //reset BYTEfree register GPIOR1
+				GPIOR2 &= (0 << 6);
 
+if(DEBUG==true) Serial.println("Command ready");
+										
+			}
+			else {
+				OCR1A=TFB;
+if (DEBUG==true) Serial.println("tussenbit");
+
+				CS = 3; //volgende doorloop naar byte verzenden.
+				i = 7; //reset bitcounter
+				if (bitRead(GPIOR2, 2) == true) bitSet(GPIOR2, 3); //Laatste byte  flag true, verkregen uit LOOP() bij volgende doorloop van T(ussenbit) uitspringen, 
+				//true bits zenden wachten op nieuw command
+			}
+
+
+			break;//(2)
+
+		case 3: //send Byte MSB first
+
+if (DEBUG == true) {
+	Serial.print("byte:  ");	
+	Serial.print(bitRead(GPIOR2, 6)); 
+	Serial.print("   Bit:  "); Serial.print(i);
+}
+
+			if (bitRead(GPIOR2, 6) == false) { //BYTEpointer true= GPIOR0, false = GPIOR1,  bepalen welke byteregister wordt verstuurd
+
+if (DEBUG == true) {
+	Serial.print("   Bitwaarde:  ");
+	Serial.println(bitRead(GPIOR0, i));
+}
+
+				if (bitRead(GPIOR0, i) == true) {
+					OCR1A = TTB;
+
+				}
+				else {
+					OCR1A = TFB;
+
+				}
+
+				i--;
+				if (i < 0) bitSet(GPIOR2, 4); //dit was het laatste bit dus BYTEfree wordt true
+
+			}
+			else { //GPIOR1 register sturen
+
+if (DEBUG == true) {
+	Serial.print("   Bitwaarde:  "); 
+	Serial.println(bitRead(GPIOR1, i));
+}
+				if (bitRead(GPIOR1, i) == true) {
+					OCR1A = TTB;
+				}
+				else {
+					OCR1A = TFB;
+				}
+
+				i--;
+				if (i < 0) bitSet(GPIOR2, 5);				
+			}
+
+
+			if (i < 0) {
+				GPIOR2 ^= (1 << 6); //toggle bytepointer				
+				CS = 2; //naar tussenbit
+if(DEBUG==true)	Serial.println("Bytepointer getoggeld");
+			}
+					
+			break; //(3)
+			}
+
+	} //bit is niet klaar, gebeurt gewoon niks
+
+
+
+	//ff ledje laten branden op deze toggle
+	//PORTB ^= (bitRead(GPIOR2, 0) << PORTB0); //  waarde van bit0 uit het flagregister kopieren naar DDB1 
+	//PORTB ^= (1 << PORTB0);
+}
+
+void TRAINLOOP() {
+	if (bitRead(GPIOR2, 1) == false) { //command ready false
+									   //zoek nieuw commando 
+									   //als geen commando te vinden... dan boolean NEWCOMMAND=false 
+									   //dan versturen van een idle command 
+
+		if (NEWCOMMAND == false) {
+			GPIOR0 = AD;
+			GPIOR1 = DT;
+			//eerste twee bytes verzonden dus ByteCounter naar 2, clear ByteFree flags, zijn niet meer vrij
+			BC = 2;
+			bitClear(GPIOR2, 4);
+			bitClear(GPIOR2, 5);
+
+		}
+		 //delay(5000); 
+
+		GPIOR2 |= (1 << 1);  //COMMAND READY naar waar
+
+	}
+	else
+	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
+		if (BC <= BT) { //geen Bytes meer te verzenden
+						//check het NIET acieve register
+
+			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register
+											   //check of register vrij is:
+				if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
+					GPIOR1 = ER;
+					bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
+					BC++;
+				}
+			}
+			else { //Register GPIOR1= actieve register, dus de andere vullen 
+				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is
+					GPIOR0 = ER;
+					bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
+					BC++;
+				}
+			}
+		}
+		else { //Geen byte meer te verzenden 
+			bitSet(GPIOR2, 2); //laatste byte is doorgegeven.
+		}
+	}
+
+
+}
 
 void setup()
 {
-	//TRAIN();
+	TRAIN();
+
 	//TIMERTEST();
 	//VOORBEELD();
 	// COMPARE();
@@ -202,9 +414,12 @@ void setup()
 	//bitSet (PORTB, PORTB1);
 	//werkt ook, maar als er nu ergens een vautje onstaat bijft alle fout gaan tot reset
 
+
+/*
 registertest = B00000000;
 pinMode(8, OUTPUT);
 Serial.begin(9600);
+*/
 }
 
 
@@ -223,31 +438,24 @@ void REGISTERS() {
 	*/
 	//of met register...?
 
-	GPIOR0 ^= (1 << 0); //toggle bit 0 in dit register....
+	GPIOR0 ^= (1 << 0); //toggle bit 0 in dit register....GPIOR1 GPIOR2
 	delay(1000);
 	digitalWrite(8, bitRead(GPIOR0, 0));
 	
-
 }
-
-
-
-
 
 ISR(TIMER1_COMPB_vect) {
 PORTB ^= (1 << PORTB1);
-
 }
-
 ISR(TIMER1_OVF_vect) {
 	PORTB = (1 << PORTB2);
-
 }
-
 void TOGGLE() {
 	// met PINB register leds omschakelen
 	//bitSet(PINB, PINB1);bitSet(PINB, PINB2);
 }
+
+byte SCHUIFBYTE=B01110100;
 
 void loop()
 {
@@ -266,9 +474,22 @@ void loop()
 	//TOGGLE();
 	//PORTB ^= (1 << PORTB1);
 	//delay(1000); 
-	REGISTERS();
+	//REGISTERS();
 
-	
-}
+	TRAINLOOP();
+
+	/*
+	// test met bit schuiven
+	delay(2000);
+		Serial.println(SCHUIFBYTE);
+		SCHUIFBYTE =SCHUIFBYTE << 1;
+	delay(2000);
+	Serial.println(SCHUIFBYTE);
+	SCHUIFBYTE = SCHUIFBYTE >> 1;
+	*/
+
+
+	}
+
 
 

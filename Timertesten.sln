@@ -5,6 +5,8 @@ VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Timertesten", "Timertesten.vcxproj", "{FDC49552-A622-4F2F-B68E-9522DCA99997}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DCC_Monitor", "..\..\..\Documents\Arduino\libraries\DCC_Decoder\examples\DCC_Monitor\DCC_Monitor.vcxproj", "{49BB6F5C-6285-4742-B52A-177D951020EC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -15,6 +17,10 @@ Global
 		{FDC49552-A622-4F2F-B68E-9522DCA99997}.Debug|x86.Build.0 = Debug|Win32
 		{FDC49552-A622-4F2F-B68E-9522DCA99997}.Release|x86.ActiveCfg = Release|Win32
 		{FDC49552-A622-4F2F-B68E-9522DCA99997}.Release|x86.Build.0 = Release|Win32
+		{49BB6F5C-6285-4742-B52A-177D951020EC}.Debug|x86.ActiveCfg = Debug|Win32
+		{49BB6F5C-6285-4742-B52A-177D951020EC}.Debug|x86.Build.0 = Debug|Win32
+		{49BB6F5C-6285-4742-B52A-177D951020EC}.Release|x86.ActiveCfg = Release|Win32
+		{49BB6F5C-6285-4742-B52A-177D951020EC}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
