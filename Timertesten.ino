@@ -59,7 +59,7 @@ Altenatieve functies van belang: datasheet ATMEL 14.3.1 Alternate Functions of P
 
 //DECLARTATIES
 //voor Registers
-byte registertest;
+//byte registertest;
 
 void TIMERTEST() {
 	//Timer gebruik met phase correct
@@ -113,12 +113,12 @@ void TIMERTEST() {
 
 
 	//Portten als output instellen
-	DDRB |= (1 << DDB0); // pinMode(8, OUTPUT);
-	DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
-	DDRB |= (1 << DDB2);
+	//DDRB |= (1 << DDB0); // pinMode(8, OUTPUT);
+	//DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
+	//DDRB |= (1 << DDB2);
 	
 	
-	noInterrupts(); //ff tegenhouden
+	//noInterrupts(); //ff tegenhouden
 	
 	//PORTB |= (1 << PORTB1);
 	//prescaler instellen
@@ -160,8 +160,6 @@ void VOORBEELD() {
 	}
 
 //declaraties voor LOOP()
-unsigned long SLOWTIMER = 0; //clock voor Slow Evens
-
 
 //Decalarties voor void TRAIN()
 
@@ -183,33 +181,48 @@ boolean BF;
 boolean DEBUG = false; //false; //toont alle teksten als true
 
 void RUNTRAIN(boolean onoff) { //start of stopt de controller
+cli(); //disable interrupts
+
 	if (onoff == true) {
 		TRAIN(); //start de controller
-		//digitalWrite(13, HIGH);in train doen
+		
+		//TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, bij true toggle output
+		//TIMSK1 |= (1 << OCIE1A); //ISR(TIMER1_COMPA_vect)  enable
+
 	}
 	else {
-		digitalWrite(13, LOW);
-		TCCR1A = 0; //initialiseer register NODIG!
-		TCCR1B = 0; //initialiseer register NODIG!
-		TIMSK1 = 0; //Interupts uitzetten
-		PORTB &= (0 << PORTB1); //PIN9 low zetten
-		PORTB &= (0 << PORTB2); //PIN10 LOW zetten.
-	}
 
+	//	TCCR1A = 0; //initialiseer register NODIG!
+	//	TCCR1B = 0; //initialiseer register NODIG!
+	//	TIMSK1 = 0; //Interupts uitzetten
+		TCCR1A &= (0 << COM1A0);//verbreek PIN 9 van de comparator
+		//TCCR1A &= (0 << COM1A1);
+		TIMSK1 &= (0 << OCIE1A); //ISR(TIMER1_COMPA_vect) disable
+
+		//PORTB &= (0 << PORTB1); //PIN9 low zetten   DOET IETS RAARS!!! zet led13 defintief uit ...????
+		//PORTB &= (0 << PORTB2); //PIN10 LOW zetten.
+
+		bitClear(PORTB, PORTB1); //Werkt wel
+		bitClear(PORTB, PORTB2);
+
+//		digitalWrite(9, LOW); // werkt wel
+	//	digitalWrite(10, LOW);
+	}
+sei(); //enable interupts
 }
 
 void TRAIN() { //set timer en outputs, de trein van datapulsen
 	//De General Purpose I/O Registers op nul stellen
+	cli(); // geen interrupts
 
-	digitalWrite(13, HIGH); //Pin13 is indicator of the train runs
-	
 	GPIOR0 = 0; //General purpose register 0, holds Byte to be send
 	GPIOR1 = 0; //General purpose register 0, holds Byte to be send
 	GPIOR2 = 0; //General Purpose register holds Flags, booleans.
-	DDRB |= (1 << DDB1); //set PIN 9 als output
-	DDRB |= (1 << DDB2); //set PIN 10 als output
 
-	noInterrupts(); //interrupts tijdelijk ondebreken
+	DDRB |= (1 << DDB1); //set PIN 9 als output Aangestuurd uit OCRA1
+	DDRB |= (1 << DDB2); //set PIN 10 als output, wordt getoggled in de ISR
+
+	 //interrupts tijdelijk ondebreken
 	TCCR1A = 0; //initialiseer register NODIG!
 	TCCR1B = 0; //initialiseer register NODIG!
 	TCCR1B |= (1 << WGM12); //CTC mode	
@@ -217,13 +230,18 @@ void TRAIN() { //set timer en outputs, de trein van datapulsen
 	OCR1A=116; //zet TOP waarde counter bij prescaler 256 1sec (standard timing true bit)
 	TCNT1 = 0; //set timer1 op 0 BOTTOM waarde counter
 	TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, bij true toggle output
-	TIMSK1 |= (1 << OCIE1A); //inerrupt op bereiken TOPwaarde
-	interrupts(); //interupts weer toestaan
+	TIMSK1 |= (1 << OCIE1A); //interrupt op bereiken TOPwaarde
+	sei(); //interupts weer toestaan
+
 }
 
 ISR(TIMER1_COMPA_vect)  {
+
+	cli();
+
 // timer compare interrupt service routine
-	PORTB ^= (PORTB1 << PORTB2); //Sets Port 2 (PIN10) opposit to PIN9 
+	PORTB ^= (PORTB1 << PORTB2); //Sets Port2 (PIN10) opposit to PORT1 PIN9
+
 	GPIOR2 ^= (1 << 0); //toggle het BITPART deel, als BITPART=false dan is het bit klaar >> nieuw bit bepalen.
 
 	if (bitRead(GPIOR2, 0) == true) { //bit is klaar .. verder
@@ -352,6 +370,7 @@ if(DEBUG==true)	Serial.println("Bytepointer getoggeld");
 	//ff ledje laten branden op deze toggle
 	//PORTB ^= (bitRead(GPIOR2, 0) << PORTB0); //  waarde van bit0 uit het flagregister kopieren naar DDB1 
 	//PORTB ^= (1 << PORTB0);
+	sei();
 }
 
 void TRAINLOOP() { 
@@ -412,15 +431,21 @@ else { //Register GPIOR1= actieve register, dus de andere vullen
 
 void TRAININTERRUPTS() { //instellen interrups voor knoppen en zo
 	//Startstop knop staat op PIN4
-	cli(); //disable interrupts
-	DDRD &= (0 << DDD4); // Zet PIN4 als INPUT
-	PCICR |= (1 << PCIE2); // Pin Change Interrupt Control Register PCIE2 = bit2(set)
-	PCMSK2 |= (1 << PCINT20); // Pin Change Mask Register 2 (Pins instellen voor interupt)	bit4 = PIN4 = PCINT20 >>= Startstop knop
+	cli(); //disable interrupts	
+	
+	TIMSK2 |= (1 << OCIE2B); // enable de OCR2B interrupt van Timer2
+	TCNT2 = 0; //Set Timer bottom waarde
+	TCCR2B |= (1 << CS22); //set prescaler
+	TCCR2B |= (1 << CS21); //set prescaler
+	TCCR2B |= (1 << CS20); //set prescaler
+	OCR2B = 100; //timerclock wordt NIET gereset dus frequency bepaald door overflow en prescaler
+
 	sei(); //enable interrupts
 }
 void setup()
 {
-	//pinMode(4, INPUT); //But1 de aanuit knop zeg maar
+	pinMode(12, OUTPUT); //But1 de aanuit knop zeg maar
+	digitalWrite(12, HIGH);
 	pinMode(13, OUTPUT); //ledje op 13 
 
 	TRAININTERRUPTS();
@@ -450,11 +475,6 @@ pinMode(8, OUTPUT);
 Serial.begin(9600);
 */
 }
-
-
-
-
-
 void REGISTERS() {
 	//kijken of een register als boolean kan worden gebruikt
 	// eerst ff met DATAtype BYTE
@@ -473,26 +493,38 @@ void REGISTERS() {
 
 }
 
+//Deze isr niet ingebruik toch?
+/*
 ISR(TIMER1_COMPB_vect) {
 	PORTB ^= (1 << PORTB1);
 }
+
+//deze ISR niet in gebruik... toch?
 ISR(TIMER1_OVF_vect) {
 	PORTB = (1 << PORTB2);
-}
+} //volgens mij niet in gebruik...
+*/
 
-volatile boolean BUT1OS = false;
-volatile boolean BUT1 = false;
+ISR(TIMER2_COMPB_vect) {
+	TIMSK2 &= (0 << OCIE2B); // disable de OCR2B interrupt van Timer2
+	//knoppen lezen
+	SLOWEVENTS();
+	TIMSK2 |= (1 << OCIE2B); // enable de OCR2B interrupt van Timer2
+	}
 
+/*
 ISR(PCINT2_vect) { 
-	//waarom die vect? is voor short en start/stopknop
+	// is voor short en start/stopknop
 // Start/stop knop
+	//PCICR &= (1 << PCIE2); //disable interrupts for portD
+
 
 	if(digitalRead(4)==true) {
 		digitalWrite(13, ! digitalRead(13));
 	}
 	
 
-/*
+
 	if (digitalRead(4) != BUT1) { //knopstatus veranderd
 		if (BUT1 == true) BUT1 = false;
 		else { //was false wordt nu true, nu output omzetten 
@@ -502,38 +534,33 @@ ISR(PCINT2_vect) {
 		}
 	}
 
-*/
+	// TIMSK0 |= (1 << OCIE0B); // enable de OCR0B interrupt van Timer0
 }
 
-
+*/
 
 void TOGGLE() {
 	// met PINB register leds omschakelen
 	//bitSet(PINB, PINB1);bitSet(PINB, PINB2);
 }
 
+volatile boolean BUT1OS = true;
+volatile boolean BUT1 = false;
 
-
-//int teller = 0;
-//boolean BUT1=false; //knop voor 
-//boolean BUT1OS = false; //Button 1 output status
-
-
-/*
 void SLOWEVENTS() {
 	//ff een test vertraging kijken of de boel blijft werken	
 	if (digitalRead(4) != BUT1) { //knopstatus veranderd
 			if (BUT1 == true) BUT1 = false;
 		else { //was false wordt nu true, nu output omzetten 
 			BUT1 = true;
+			digitalWrite(13,BUT1OS);
 			BUT1OS= ! BUT1OS;
-			RUNTRAIN(BUT1OS); //start/stopt de controller
+			digitalWrite(12, BUT1OS);
+			RUNTRAIN(BUT1OS);
 		}
 	}
-}
 
-byte SCHUIFBYTE=B01110100;
-*/
+}
 
 void loop()
 {
