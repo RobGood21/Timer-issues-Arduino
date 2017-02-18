@@ -243,16 +243,12 @@ void TRAIN() { //set timer en outputs, de trein van datapulsen
 	
 }
 
-ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine
-
-	cli();
-
-	PORTB ^= (1 << PORTB2); //toggles PIN10
-
-
+ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
+	//Variabele DEBUG toont op de serial monitor de bits en bytes zoals bepaald en verzonden. Controller doet het dan
+	//niet meer vanwege timing. 
+	cli(); //disable interrupts
+	PORTB ^= (1 << PORTB2); //toggles PIN10, better do this with a hardware inverter. 
 	GPIOR2 ^= (1 << 0); //toggle het BITPART deel, als BITPART=false dan is het bit klaar >> nieuw bit bepalen.
-
-
 	if (bitRead(GPIOR2, 0) == true) { //bit is klaar .. verder
 
 		switch (CS) { //CS=Commandstatus ) 0=Wacht op Command; 1=Preample zenden; 2=Tussenbit zenden; 3=Byte verzenden 
@@ -262,12 +258,14 @@ ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine
 
 if (DEBUG==true) Serial.println("wacht op COMMAND");
 			
-				if (bitRead(GPIOR2, 1) == true) //COMMANDready 
+				if (bitRead(GPIOR2, 1) == true) 
+					//COMMANDready == true er is een NIEUW COMMAND bepaald en verzending ervan start.
+					//COMMANDready == false er is nog GEEN command bepaald, gewoon weer een 1 bit sturen.
 			{
-				CS = 1; //na volgende true bit preample verzenden 
+				CS = 1; //nu volgende true bit preample verzenden 
 				i = 0; //teller reset
 			}
-			break;// (0)
+			break;//(0)  
 
 		case 1: //send preample
 			//registers resetten
@@ -316,8 +314,6 @@ if (DEBUG==true) Serial.println("tussenbit");
 				if (bitRead(GPIOR2, 2) == true) bitSet(GPIOR2, 3); //Laatste byte  flag true, verkregen uit LOOP() bij volgende doorloop van T(ussenbit) uitspringen, 
 				//true bits zenden wachten op nieuw command
 			}
-
-
 			break;//(2)
 
 		case 3: //send Byte MSB first
@@ -358,10 +354,8 @@ if (DEBUG == true) {
 					if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >>1);
 				}
 				else {
-					if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
-					
+					if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);					
 				}
-
 				i--;
 				if (i < 0) bitSet(GPIOR2, 5);				
 			}			
@@ -369,21 +363,14 @@ if (DEBUG == true) {
 				GPIOR2 ^= (1 << 6); //toggle bytepointer				
 				CS = 2; //naar tussenbit
 if(DEBUG==true)	Serial.println("Bytepointer getoggeld");
-			}
-					
+			}					
 			break; //(3)
 			}
-
 	} //bit is niet klaar, gebeurt gewoon niks
-	
-	//ff ledje laten branden op deze toggle
-	//PORTB ^= (bitRead(GPIOR2, 0) << PORTB0); //  waarde van bit0 uit het flagregister kopieren naar DDB1 
-	//PORTB ^= (1 << PORTB0);
-	sei();
+	sei(); //Enable interrupts
 }
 
 void TRAINLOOP() { 
-
 
 	if (bitRead(GPIOR2, 1) == false) { 
 		//command ready false
@@ -391,8 +378,6 @@ void TRAINLOOP() {
 		//als geen commando te vinden... dan boolean NEWCOMMAND=false 
 		//dan versturen van een idle command 
 		// do slow events (knoppen enzo)
-
-
 
 		// hier dus een nieuw command zoeken.
 		if (NEWCOMMAND == false) {
@@ -402,17 +387,12 @@ void TRAINLOOP() {
 			BC = 2;
 			bitClear(GPIOR2, 4);
 			bitClear(GPIOR2, 5);
-
 		}
-		 //delay(5000); 
-
 		GPIOR2 |= (1 << 1);  //COMMAND READY naar waar
-
 	}
 	else
 	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
-		if (BC <= BT) { //geen Bytes meer te verzenden
-						//check het NIET acieve register
+		if (BC <= BT) { //geen Bytes meer te verzenden	//check het NIET acieve register
 
 if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register
 								   //check of register vrij is:
@@ -434,16 +414,21 @@ else { //Register GPIOR1= actieve register, dus de andere vullen
 			bitSet(GPIOR2, 2); //laatste byte is doorgegeven.
 		}
 	}
-
-
 }
 
-void TRAININTERRUPTS() { //instellen interrups voor knoppen en zo
+void TRAINSETUP() { //instellen interrups voor knoppen en zo
 	//Startstop knop staat op PIN4
 	cli(); //disable interrupts	
-	
+//Gebruikte timer = timer 2 voor timerinterrupts voor de SLOWEVENTS (switches..)
+
+	DDRB |= (1 << DDB4); //Pin12, PORTB4 als Output
+	PORTB |= (1 << PORTB4); //Zet PIN12 hoog. (groene led)
+	DDRD |= (1 << DDD7); //PIN7 H-Bridge enable als output
+	PORTD |= (1 << PORTD7); //Enable H-bridge
+	DDRD &= ~(1 << DDD5); //PIN 5 (PORTD4) input met pullup weerstand stellen
+	PORTD |= (1 << PORTD5); // pull up intern inschakelen zodat de SHORT functie optioneel wordt. Als PIN7 Hoog is draait de controller
 	TIMSK2 |= (1 << OCIE2B); // enable de OCR2B interrupt van Timer2
-	TCNT2 = 0; //Set Timer bottom waarde
+	TCNT2 = 0; //Set Timer 2 bottom waarde
 	TCCR2B |= (1 << CS22); //set prescaler
 	TCCR2B |= (1 << CS21); //set prescaler
 	TCCR2B |= (1 << CS20); //set prescaler
@@ -453,66 +438,9 @@ void TRAININTERRUPTS() { //instellen interrups voor knoppen en zo
 }
 void setup()
 {
-	pinMode(12, OUTPUT); //But1 de aanuit knop zeg maar
-	digitalWrite(12, HIGH);
-	pinMode(13, OUTPUT); //ledje op 13 
-
-	pinMode(7, OUTPUT);
-	digitalWrite(7, HIGH);
-
-	//TBV Output kortsluiting. 
-	//We meten de uitgangs spanning gelijkgericht en voorien van een RC circuit van 1microF
-//   pinMode(5, INPUT); //op pin 4 aansluiting pin3 van de 555 als schmitt trigger ingesteld.
-
-	DDRD &= ~(1 << DDD5); //in C language
-	PORTD |= (1 << PORTD5); // pull up intern inschakelen zodat de SHORT functie optioneel wordt, controller werkt ook ZONDER...
-
-	TRAININTERRUPTS();
+	TRAINSETUP();
 	TRAIN();
-
-
-	//TIMERTEST();
-	//VOORBEELD();
-	// COMPARE();
-	// OVERLOOP();
-	// pin 9 is bit 2 in port b dus ... erg langzaam, 
-	// pinMode(9, OUTPUT);  of 
-
-	//DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
-
-
-	//DDRB |= B00000010; // of decimaal of met deze rare constructie blijkbaar hebben de bits een aanwijsbaar alias
-	// DDRB = 2; // lastig  omdat je ALLE poorten goed in de gaten moet hebben dan, bovenstaand is beste of
-	//voor toggle bij start
-	//bitSet (PORTB, PORTB1);
-	//werkt ook, maar als er nu ergens een vautje onstaat bijft alle fout gaan tot reset
-
-
-/*
-registertest = B00000000;
-pinMode(8, OUTPUT);
-Serial.begin(9600);
-*/
 }
-void REGISTERS() {
-	//kijken of een register als boolean kan worden gebruikt
-	// eerst ff met DATAtype BYTE
-	//BYTE in declareren
-	/*
-	registertest ^= (1 << 0);
-	delay(1000);
-	digitalWrite(8, bitRead(registertest, 0));
-	Serial.println(bitRead(registertest, 0));
-	*/
-	//of met register...?
-
-	GPIOR0 ^= (1 << 0); //toggle bit 0 in dit register....GPIOR1 GPIOR2
-	delay(1000);
-	digitalWrite(8, bitRead(GPIOR0, 0));
-
-}
-
-//Deze isr niet ingebruik toch?
 
 
 ISR(TIMER2_COMPB_vect) {
@@ -520,60 +448,16 @@ ISR(TIMER2_COMPB_vect) {
 	SLOWEVENTS();
 	}
 
-/*
-ISR(PCINT2_vect) { 
-	// is voor short en start/stopknop
-// Start/stop knop
-	//PCICR &= (1 << PCIE2); //disable interrupts for portD
-
-
-	if(digitalRead(4)==true) {
-		digitalWrite(13, ! digitalRead(13));
-	}
-	
-
-
-	if (digitalRead(4) != BUT1) { //knopstatus veranderd
-		if (BUT1 == true) BUT1 = false;
-		else { //was false wordt nu true, nu output omzetten 
-			BUT1 = true;
-			BUT1OS = !BUT1OS;
-			RUNTRAIN(BUT1OS); //start/stopt de controller
-		}
-	}
-
-	// TIMSK0 |= (1 << OCIE0B); // enable de OCR0B interrupt van Timer0
-}
-
-*/
-
-void TOGGLE() {
-	// met PINB register leds omschakelen
-	//bitSet(PINB, PINB1);bitSet(PINB, PINB2);
-}
-
-
-
 void SLOWEVENTS() {
-
-	SCOUNTER++;  //		een test vertraging kijken of de boel blijft werken	
-
+	SCOUNTER++;  //Counter voor het aantal doorlopen van deze VOID
 	if (bitRead(PIND,PIND4)!= BUT1) {//  (digitalRead(4) != BUT1) { //knopstatus veranderd
-
 			if (BUT1 == true) BUT1 = false;
 		else { //was false wordt nu true, nu output omzetten 
 			BUT1 = true;
-			digitalWrite(13,BUT1OS);
 			BUT1OS= ! BUT1OS;
 			digitalWrite(12, BUT1OS);
 			RUNTRAIN(BUT1OS);
 			if (BUT1OS == true) SCOUNTER = 7;
-			/*
-			Deze routine werkt een beetje slappy... gebruik van een zener lijkt me een beter plan. 
-
-			De kortsluitdetectie moet even na herstart een preriode worden enables, deze constructie met de SCOUNTER
-			Zorgt daarvoor. Hoe hoger de waarde hoe korter de enable tijd.
-			*/
 		}
 	}
 
@@ -586,59 +470,14 @@ void SLOWEVENTS() {
 			BUT1OS = false;
 			RUNTRAIN(BUT1OS);
 			digitalWrite(12, BUT1OS);
-			digitalWrite(13, !BUT1OS);
-
 			SCOUNTER = 10;
 		}
 	}
-
 }
 
 void loop()
 {
-
 	TRAINLOOP();
-
-
-	//PORTB |= B00000010;  //of
-	// PORTB=PORTB |= (1 << PORTB1);
-	//PORTB |= (1 << PORTB1);
-	//PORTB &= B11111011;
-	// PORTB &= (0 << PORTB2); dit werkt niet.... wel alles in 1 keer (1<<DDB3)|(1<<DDB2)|(1<<DDB1)|(1<<DDB0)
-	//PORTB = B00000010; // of
-	//bitSet(PORTB, PORTB1); bitClear(PORTB, PORTB2);
-	//delay(1000);
-	//PORTB &= B11111101;
-	//PORTB |= (1 << PORTB2);
-	//PORTB = B00000100;
-	//bitSet(PORTB, PORTB2); bitClear(PORTB, PORTB1);
-	//TOGGLE();
-	//PORTB ^= (1 << PORTB1);
-	//delay(1000); 
-	//REGISTERS();
-
-	
-
-	/*
-	if (millis() - SLOWTIMER > 100) {
-		SLOWTIMER = millis();
-			SLOWEVENTS();
-	}
-
-
-
-	// SLOWEVENTS();
-	
-	// test met bit schuiven
-	delay(2000);
-		Serial.println(SCHUIFBYTE);
-		SCHUIFBYTE =SCHUIFBYTE << 1;
-	delay(2000);
-	Serial.println(SCHUIFBYTE);
-	SCHUIFBYTE = SCHUIFBYTE >> 1;
-	*/
-
-
 	}
 
 
