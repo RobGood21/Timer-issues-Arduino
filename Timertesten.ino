@@ -1,10 +1,12 @@
 /*
+*****************************************
 Name:		Timertesten.ino
 Created:	2/3/2017 9:49:42 PM
-Author:	Rob Antonisse
-*/
 
-/* Beschrijvingen uitgebreid.
+Author:	Rob Antonisse
+*****************************************
+
+Beschrijvingen uitgebreid.
 Registers voor pinacties
 
 MCUCR – MCU Control Register Bit 4 – PUD: Pull-up Disable dus pull-up weerstenaden allemaal uitzetten, voorlopig nergens voor nodig feb2017
@@ -56,117 +58,15 @@ Altenatieve functies van belang: datasheet ATMEL 14.3.1 Alternate Functions of P
 */
 
 
-
 //DECLARTATIES
-//voor Registers
-//byte registertest;
-
-void TIMERTEST() {
-	//Timer gebruik met phase correct
-	//Void hoeft maar 1x uitgevoerd te worden in set up dus pinnen kunnen hier worden gedefinieerd
-	//Eerst Pinnen aanzetten, pin 9 en 10 standaard al gedefinieerd.
-
-
-	//Compare Output Mode, Phase Correct and Phase and Frequency Correct PWM(1)
-	//Set in TCCR1A beide COM1A0 en COM1B0
-	//TCCR1A – Timer/Counter1 Control Register A set beide COM1A0 COM1B0 voor toggle (omschakelen) bij bereiken Compare match.
-
-	// Bit 1:0 – WGM11 : 0 : Waveform Generation Mode sets samen met TCCR1B. deze mode... hier kiezen voor mode
-	//WGM13 1=TCCR1B bit4, WGM12 0=TCCR1B bit3, WGM11 1=TCCRA1 bit1, WGM10 1 =TCCRA1 bit0,
-	//mode CTC 4 set WGM12
-	//TCCR1A = 0; //initialiseren voor de zekerheid...
-	//TCCR1B |= (1 << WGM13),
-
-	//TCCR1A |= (1 << WGM12); //TCCR1A |= (1 << WGM11); TCCR1A |= (1 << WGM10);
-		
-	//TCCR1A |= (1 << COM1A0); TCCR1A |= (1 << COM1B0); 
-	
-	//TCCR1A |= (1 << COM1A1); TCCR1B |= (1 << COM1B1);
-
-
-	
-	
-	//TCCR1B – Timer/Counter1 Control Register B 
-	//prescaler even max zetten om de leds te kunnen zien knipperen, dus prescaler naar 1024 dus set CS12 en CS10
-			//TCCR1B |= (1 << CS12); TCCR1B |= (1 << CS10);
-	
-	//16.11.3 TCCR1C – Timer/Counter1 Control Register C niet duidelijk of hier iets buikbaars bij is.
-	//TCNT1H and TCNT1L – Timer/Counter1 de feitelijk counter, voor timer 1 16bits, timer 0 en 2 alleen 1 byte
-	// bij voorkeur iets verzinnen dat deze timer niet opnieuw hoeft in te stellen, we kiezen 232, geeft gewenste tijd 116 micros  bij prescaler 8
-	
-	//TCNT1 = 6000;
-	
-
-	//OCR1AH and OCR1AL – Output Compare Register 1 A ;//vergelijk met waarde counter kanaal A
-	//OCR1A = 3125;
-	//OCR1B = 1160;
-
-	//OCR1BH and OCR1BL – Output Compare Register 1 B ; //vergelijk met waarde counter kanaal B
-	//ICR1H and ICR1L – Input Capture Register 1 
-
-	//TIMSK1 – Timer/Counter1 Interrupt Mask Register
-	//bit5=ICIE1 (enabled input interrupt) bit2=OCIE1B (enabled Output Compare B Match interrupt)  bit1 = OCIE1A (enabled Output Compare A Match interrupt) 
-	//bit0=TOIE1 (enabled Timer/Counter1 Overflow interrupt)
-	//TIFR1 – Timer/Counter1 Interrupt Flag Register bit5=ICF1  bit2=OCF1B bit1=OCF1A bit0=TOV1
-	//PIN als output
-
-
-
-	//Portten als output instellen
-	//DDRB |= (1 << DDB0); // pinMode(8, OUTPUT);
-	//DDRB |= (1 << DDB1); // pinMode(9, OUTPUT); maar veel sneller
-	//DDRB |= (1 << DDB2);
-	
-	
-	//noInterrupts(); //ff tegenhouden
-	
-	//PORTB |= (1 << PORTB1);
-	//prescaler instellen
-
-	//TCCR1A = 0;
-	//TCCR1B = 0;
-
-	TCCR1A = 0;
-	TCCR1B = 0;
-	TCCR1A |= (1 << COM1A0);// TCCR1A |= (1 << COM1B0);// gebruikt pin 9 en 10 als output
-
-	TCCR1B |= (1 << CS12); // prescaler op 256 TCCR1B | (1 << CS10);
-	TCCR1B |= (1 << WGM12); //CTC mode		
-	
-	OCR1A = 50000; //timer kanaal A
-	OCR1B = 10000; //timer kanaal B
-	TCNT1 = 0;
-	// TIMSK1 |= (1 << TOIE1);TIMSK1 |= (1 << OCIE1A);TIMSK1 |= (1 << OCIE1B); // interrupts toestaan
-
-	interrupts();
-	
-}
-
-void VOORBEELD() {
-	
-		pinMode(8, OUTPUT);
-
-		// initialize timer1 
-		noInterrupts();           // disable all interrupts
-		TCCR1A = 0;
-		TCCR1B = 0;
-		TCNT1 = 0;
-
-		OCR1A = 31250;            // compare match register 16MHz/256/2Hz
-		TCCR1B |= (1 << WGM12);   // CTC mode
-		TCCR1B |= (1 << CS12);    // 256 prescaler 
-		TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
-		interrupts();             // enable all interrupts
-	}
-
-//declaraties voor LOOP()
 
 //Decalarties voor void TRAIN()
 volatile boolean BUT1OS = true;
 volatile boolean BUT1 = false;
 volatile int SCOUNTER = 0;
 int CS = 0; //Commandstatus
-int i; //teller voor loop functies
+int i; //teller voor loop functies in train
+
 
 //TRAINLOOP
 //declaraties tbv TRAIN() in LOOP()
@@ -178,9 +78,15 @@ int BC = 0; //=ByteCount Aantal verzonden bytes
 int BT = 3; //ByteTotal =aantal te verzenden bytes
 boolean BF;
 
-
 //xxxdeclaraties voor testen
 boolean DEBUG = false; //false; //toont alle teksten als true
+
+//Declaraties voor INPUTCOMMAND
+byte OLDCP = 0; //Oude status van C port register
+byte CHANGECP = 0; //veranderde bits
+int t; //Teller loop functies in INPUTCOMMAND
+int FLASH = 0; //hoevaak led moet flashen
+int FLASHTIMER = 0; //duur van de flash
 
 void RUNTRAIN(boolean onoff) { //start of stopt de controller
 
@@ -354,25 +260,25 @@ if (DEBUG == true) {
 					if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >>1);
 				}
 				else {
-					if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);					
+					if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
 				}
 				i--;
-				if (i < 0) bitSet(GPIOR2, 5);				
-			}			
+				if (i < 0) bitSet(GPIOR2, 5);
+			}
 			if (i < 0) {
 				GPIOR2 ^= (1 << 6); //toggle bytepointer				
 				CS = 2; //naar tussenbit
-if(DEBUG==true)	Serial.println("Bytepointer getoggeld");
-			}					
+				if (DEBUG == true)	Serial.println("Bytepointer getoggeld");
+			}
 			break; //(3)
 			}
 	} //bit is niet klaar, gebeurt gewoon niks
 	sei(); //Enable interrupts
 }
 
-void TRAINLOOP() { 
+void TRAINLOOP() {
 
-	if (bitRead(GPIOR2, 1) == false) { 
+	if (bitRead(GPIOR2, 1) == false) {
 		//command ready false
 		//zoek nieuw commando 
 		//als geen commando te vinden... dan boolean NEWCOMMAND=false 
@@ -394,21 +300,21 @@ void TRAINLOOP() {
 	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
 		if (BC <= BT) { //geen Bytes meer te verzenden	//check het NIET acieve register
 
-if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register
-								   //check of register vrij is:
-	if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
-		GPIOR1 = ER;
-		bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
-		BC++;
-	}
-}
-else { //Register GPIOR1= actieve register, dus de andere vullen 
-	if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is
-		GPIOR0 = ER;
-		bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
-		BC++;
-	}
-}
+			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register
+											   //check of register vrij is:
+				if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
+					GPIOR1 = ER;
+					bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
+					BC++;
+				}
+			}
+			else { //Register GPIOR1= actieve register, dus de andere vullen 
+				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is
+					GPIOR0 = ER;
+					bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
+					BC++;
+				}
+			}
 		}
 		else { //Geen byte meer te verzenden 
 			bitSet(GPIOR2, 2); //laatste byte is doorgegeven.
@@ -438,10 +344,57 @@ void TRAINSETUP() { //instellen interrups voor knoppen en zo
 }
 void setup()
 {
+	//tbv INPUTCOMMAND, tijdelijke pinnen tbv schakelaars en Leds. 
+		//Voor schakelaars PORTC bit 0:5  (PINA0:PINA5) instellen als input dus false
+	DDRC = 0; //alle PORTC pins als input. ook de reset PORTC6
+	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
+	PORTB |= (1 << PORTB3); //Set high, led off
+	PINC = 0; //clear alle inputs
+	OLDCP = PINC; //kopieer huidige PINC
+
 	TRAINSETUP();
 	TRAIN();
 }
+void INPUTCOMMANDS() { //leest schakelaars PORTC
+	t = 0; //reset  teller
+	CHANGECP = OLDCP ^ PINC; //XOR nieuwe situatie C port met situatie vorige doorloop
 
+	while (t < 6) {
+		
+		if ((CHANGECP >> t) & 1 == true){ //t=nu het veranderde bit
+			//Serial.println(t);
+
+			if (FLASH == 0 ) FLASH = t+1; //**** laat ledje aantal keer flashen, geeft aan welke knop is ingedrukt
+		}
+
+		t++;
+	}
+
+
+	//if (CHANGECP > 0) PORTB ^= (1 << PORTB3); //toggle PIN11 Led.
+	OLDCP = PINC; //Kopieer huidige PINC 
+
+
+	//*****heel verhaal om de led te laten flitsen en aan te geven welke switchstatus is veranderd.
+	if (FLASHTIMER < 1 && FLASH > 0 ) {	
+		PORTB ^= (1 << PORTB3); //toggle pin 11 led	
+
+		if (bitRead(PINB,PINB3) == true) { //led weer uit
+			if (FLASH > 0) {
+				PORTB &= ~(1 << PORTB3); //Set pin11 laag, led aan
+				FLASHTIMER = 5;
+				FLASH--;
+			}		
+		}
+		else {
+			FLASHTIMER = 5;
+		}
+	}		
+	else { //flashtimer niet 0
+		FLASHTIMER--;
+		if (FLASHTIMER < 1 && FLASH < 1) bitSet(PORTB, PORTB3);
+	}
+}
 
 ISR(TIMER2_COMPB_vect) {
 
@@ -460,8 +413,6 @@ void SLOWEVENTS() {
 			if (BUT1OS == true) SCOUNTER = 7;
 		}
 	}
-
-
 	if (SCOUNTER > 10) {
 		
 		if (bitRead(PIND,PIND5)==false) { // (digitalRead(5) == LOW) { = veel sneller
@@ -473,6 +424,8 @@ void SLOWEVENTS() {
 			SCOUNTER = 10;
 		}
 	}
+
+	INPUTCOMMANDS();
 }
 
 void loop()
