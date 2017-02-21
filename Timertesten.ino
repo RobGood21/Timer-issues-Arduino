@@ -78,15 +78,35 @@ int BC = 0; //=ByteCount Aantal verzonden bytes
 int BT = 3; //ByteTotal =aantal te verzenden bytes
 boolean BF;
 
-//xxxdeclaraties voor testen
+//xxxdeclaraties voor debugging 
 boolean DEBUG = false; //false; //toont alle teksten als true
+
+
+
 
 //Declaraties voor INPUTCOMMAND
 byte OLDCP = 0; //Oude status van C port register
 byte CHANGECP = 0; //veranderde bits
+
+byte RIJ;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
+byte KOLOM;
+byte SWREG; // byte voor 8 flags bit0= nieuw ingedrukte schakelaar (true).
+
+unsigned int ADRESCOMMAND[10]; //gevonden adres van de knop, corresponderend met een geheugen adres waar command instaat
+byte STATUS[10]; //status van dit command adres
+byte MSB[10]; //msb van command komt uit eeprom geheugen ADRESCOMMAND
+byte LSB[10]; //LSB van command komt uit eeprom geheugen ADRESCOMMAND + 1
+byte ERROR[10]; //XOR van MSB en LSB 
+
+
+//Tijdelijk voor flikkerledje
 int t; //Teller loop functies in INPUTCOMMAND
+int bl; //Teller voor INPUTLOOP()
 int FLASH = 0; //hoevaak led moet flashen
 int FLASHTIMER = 0; //duur van de flash
+
+
+
 
 void RUNTRAIN(boolean onoff) { //start of stopt de controller
 
@@ -342,6 +362,15 @@ void TRAINSETUP() { //instellen interrups voor knoppen en zo
 
 	sei(); //enable interrupts
 }
+
+void INPUTSETUP() {
+	//Alleen voor knoppen ontwerp mag weg straks
+	pinMode(12, OUTPUT);
+	digitalWrite(12, HIGH);
+	//******************************
+
+}
+
 void setup()
 {
 	//tbv INPUTCOMMAND, tijdelijke pinnen tbv schakelaars en Leds. 
@@ -352,29 +381,44 @@ void setup()
 	PINC = 0; //clear alle inputs
 	OLDCP = PINC; //kopieer huidige PINC
 
+	INPUTSETUP(); //Setup routine voor inputzaken
+
+
+//voor ontwerp knoppen en command berekening even uitzetten
 	TRAINSETUP();
-	TRAIN();
+	//TRAIN();
 }
+
+
+
 void INPUTCOMMANDS() { //leest schakelaars PORTC
 	t = 0; //reset  teller
-	CHANGECP = OLDCP ^ PINC; //XOR nieuwe situatie C port met situatie vorige doorloop
 
+	//tijdelijk gebruik van het input register van PORTC dit moet straks 1 van de 8 uit shiftregister verkregen knopstatus bytes worden.
+	//Ook OLDCP wordt een array van 8 bytes dan. Voorlopig even met 1 byte werken. 
+	//dus een while die de 8 registers doorloopt, PINC is dan die verkregen byte uit het shiftregister
+
+	CHANGECP = OLDCP ^ PINC; //XOR nieuwe situatie C port met situatie vorige doorloop, straks data uit shiftregisters
+
+	RIJ = CHANGECP & PINC; //veranderde pinstatus and pinstatus is true, dus ingedrukte schakelaar. Byte doorgeven aan loop
+	KOLOM = 0; // voorlopig slechts 1 kolm dus 8 schakelaars
+	SWREG |= (1 << 0); //set flag nieuwe switch, verwerken in Loop. 
+
+
+	//dit dient alleen voor het flikkerledje om te zien of er uberhaupt wat gebeurt
 	while (t < 6) {
-		
 		if ((CHANGECP >> t) & 1 == true){ //t=nu het veranderde bit
-			//Serial.println(t);
-
+			if (bitRead(PINC, t) == true) { //Knop T ingedrukt (0-6)
+			}
 			if (FLASH == 0 ) FLASH = t+1; //**** laat ledje aantal keer flashen, geeft aan welke knop is ingedrukt
 		}
 
 		t++;
 	}
-
-
 	//if (CHANGECP > 0) PORTB ^= (1 << PORTB3); //toggle PIN11 Led.
 	OLDCP = PINC; //Kopieer huidige PINC 
 
-
+//*****************************************************************************************************
 	//*****heel verhaal om de led te laten flitsen en aan te geven welke switchstatus is veranderd.
 	if (FLASHTIMER < 1 && FLASH > 0 ) {	
 		PORTB ^= (1 << PORTB3); //toggle pin 11 led	
@@ -394,6 +438,7 @@ void INPUTCOMMANDS() { //leest schakelaars PORTC
 		FLASHTIMER--;
 		if (FLASHTIMER < 1 && FLASH < 1) bitSet(PORTB, PORTB3);
 	}
+//****************************************************************************************************
 }
 
 ISR(TIMER2_COMPB_vect) {
@@ -428,9 +473,24 @@ void SLOWEVENTS() {
 	INPUTCOMMANDS();
 }
 
+void INPUTLOOP() {
+	if (bitRead(SWREG, 0) == true) { // nieuwe switches, ingedrukte schakelaars.
+	//	RIJ en KOLOM bepalen nu het adres.
+
+
+
+
+		bitSet(SWREG, 0); //set status flag weer false
+	}
+
+}
+
 void loop()
 {
-	TRAINLOOP();
+	
+	//tijdens ontwerp knoppen even uit
+	//TRAINLOOP();
+	INPUTLOOP();
 	}
 
 
