@@ -78,9 +78,11 @@ int BC = 0; //=ByteCount Aantal verzonden bytes
 int BT = 3; //ByteTotal =aantal te verzenden bytes
 boolean BF;
 
-//xxxdeclaraties voor debugging 
+//xxxdeclaraties voor debugging en testen
 boolean DEBUG = false; //false; //toont alle teksten als true
 
+//straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
+byte MEMORIE[16];
 
 
 
@@ -88,20 +90,22 @@ boolean DEBUG = false; //false; //toont alle teksten als true
 byte OLDCP = 0; //Oude status van C port register
 byte CHANGECP = 0; //veranderde bits
 
-byte RIJ;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
-byte KOLOM;
-byte SWREG; // byte voor 8 flags bit0= nieuw ingedrukte schakelaar (true).
+byte RIJ=0;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
+byte KOLOM=0; //voorlopig 1 kolom
+byte SWREG=0; // byte voor 8 flags bit0= nieuw ingedrukte schakelaar (true).
 
-unsigned int ADRESCOMMAND[10]; //gevonden adres van de knop, corresponderend met een geheugen adres waar command instaat
-byte STATUS[10]; //status van dit command adres
-byte MSB[10]; //msb van command komt uit eeprom geheugen ADRESCOMMAND
-byte LSB[10]; //LSB van command komt uit eeprom geheugen ADRESCOMMAND + 1
-byte ERROR[10]; //XOR van MSB en LSB 
+//unsigned int CADRES[10]; //gevonden adres van de knop, corresponderend met een geheugen adres waar command instaat
+byte CREG[10]; //status van dit command adres
+byte CMSB[10]; //msb van command komt uit eeprom geheugen ADRESCOMMAND
+byte CLSB[10]; //LSB van command komt uit eeprom geheugen ADRESCOMMAND + 1
+byte CERROR[10]; //XOR van MSB en LSB 
+
+byte KNOPSTATUS[8];  //onthoud de laatste stand van de accessoire door deze knop aangestuurd. (aan of uit)
 
 
 //Tijdelijk voor flikkerledje
-int t; //Teller loop functies in INPUTCOMMAND
-int bl; //Teller voor INPUTLOOP()
+int tic; //Teller loop functies in INPUTCOMMAND
+int til; //Teller voor INPUTLOOP()
 int FLASH = 0; //hoevaak led moet flashen
 int FLASHTIMER = 0; //duur van de flash
 
@@ -168,6 +172,8 @@ void TRAIN() { //set timer en outputs, de trein van datapulsen
 	sei(); //interupts weer toestaan
 	
 }
+
+
 
 ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
 	//Variabele DEBUG toont op de serial monitor de bits en bytes zoals bepaald en verzonden. Controller doet het dan
@@ -296,50 +302,53 @@ if (DEBUG == true) {
 	sei(); //Enable interrupts
 }
 
-void TRAINLOOP() {
+ISR(TIMER2_COMPB_vect) {
 
-	if (bitRead(GPIOR2, 1) == false) {
-		//command ready false
-		//zoek nieuw commando 
-		//als geen commando te vinden... dan boolean NEWCOMMAND=false 
-		//dan versturen van een idle command 
-		// do slow events (knoppen enzo)
-
-		// hier dus een nieuw command zoeken.
-		if (NEWCOMMAND == false) {
-			GPIOR0 = AD;
-			GPIOR1 = DT;
-			//eerste twee bytes verzonden dus ByteCounter naar 2, clear ByteFree flags, zijn niet meer vrij
-			BC = 2;
-			bitClear(GPIOR2, 4);
-			bitClear(GPIOR2, 5);
-		}
-		GPIOR2 |= (1 << 1);  //COMMAND READY naar waar
+	SLOWEVENTS();
+	INPUTCOMMAND();
 	}
-	else
-	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
-		if (BC <= BT) { //geen Bytes meer te verzenden	//check het NIET acieve register
 
-			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register
-											   //check of register vrij is:
-				if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
-					GPIOR1 = ER;
-					bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
-					BC++;
-				}
-			}
-			else { //Register GPIOR1= actieve register, dus de andere vullen 
-				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is
-					GPIOR0 = ER;
-					bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
-					BC++;
-				}
-			}
+void WRITECOMMANDS() {
+	//Toont de inhoud van de commandregisters
+	static int w, b; //tellers
+	w = 0;
+	while (w < 10) {	
+		Serial.println();
+		Serial.print("CREG ");
+		Serial.print(w);
+		Serial.print(" : ");
+		b = 7;
+		while (b >= 0) {
+			Serial.print(bitRead(CREG[w], b));
+			b--;
 		}
-		else { //Geen byte meer te verzenden 
-			bitSet(GPIOR2, 2); //laatste byte is doorgegeven.
-		}
+		b = 7;
+		Serial.println();
+		Serial.print("MSB= :   ");
+		while (b >= 0) {
+			Serial.print(bitRead(CMSB[w],b));
+			b--;
+			}
+
+		b = 7;
+
+			Serial.println();
+			Serial.print("LSB= :   ");
+			while (b >= 0) {
+				Serial.print(bitRead(CLSB[w], b));
+				b--;
+			}
+			b = 7;
+			Serial.println();
+			Serial.print("ERROR=:  ");
+			while (b >= 0) {
+				Serial.print(bitRead(CERROR[w], b));
+				b--;
+			}
+			Serial.println();
+		w++;
 	}
+
 }
 
 void TRAINSETUP() { //instellen interrups voor knoppen en zo
@@ -387,33 +396,59 @@ void setup()
 //voor ontwerp knoppen en command berekening even uitzetten
 	TRAINSETUP();
 	//TRAIN();
+
+//tijdelijk even commandoos in een byte array plaatsen
+	MEMORIE[0] = B10000000; 
+	MEMORIE[1] = B11110000; //adres0 activate off
+
+	MEMORIE[2] = B10000000;
+	MEMORIE[3] = B11110001; //adres1 deactivate off
+
+	MEMORIE[4] = B10000000;
+	MEMORIE[5] = B11110010; //adres2 activate off
+
+	MEMORIE[6] = B10000000;
+	MEMORIE[7] = B11110011; //adres3 activate off
+
+	MEMORIE[8] = B10000000;
+	MEMORIE[9] = B11110100; //adres4 deactivate off
+
+	MEMORIE[10] = B10000101;
+	MEMORIE[11] = B11110101; //adres5 activate off
+
+	MEMORIE[12] = B10000000;
+	MEMORIE[13] = B11110110; //adres6 activate off
+
+	MEMORIE[14] = B10000000;
+	MEMORIE[15] = B11110111; //adres7 deactivate off
+//totaal even een 8 schakelaars, commandoos.
+	
 }
 
-
-
-void INPUTCOMMANDS() { //leest schakelaars PORTC
-	t = 0; //reset  teller
+void INPUTCOMMAND() { //leest schakelaars PORTC
+	tic = 0; //reset  teller input command
 
 	//tijdelijk gebruik van het input register van PORTC dit moet straks 1 van de 8 uit shiftregister verkregen knopstatus bytes worden.
 	//Ook OLDCP wordt een array van 8 bytes dan. Voorlopig even met 1 byte werken. 
 	//dus een while die de 8 registers doorloopt, PINC is dan die verkregen byte uit het shiftregister
 
 	CHANGECP = OLDCP ^ PINC; //XOR nieuwe situatie C port met situatie vorige doorloop, straks data uit shiftregisters
-
 	RIJ = CHANGECP & PINC; //veranderde pinstatus and pinstatus is true, dus ingedrukte schakelaar. Byte doorgeven aan loop
-	KOLOM = 0; // voorlopig slechts 1 kolm dus 8 schakelaars
-	SWREG |= (1 << 0); //set flag nieuwe switch, verwerken in Loop. 
+	KOLOM = 0; // voorlopig slechts 1 kolom dus 8 schakelaars, hier starks een while loop voor alle kolommen. 
+	if(RIJ > 0) SWREG |= (1 << 0); //Als een true switch event set flag nieuwe switch, verwerken in Loop. 
 
 
-	//dit dient alleen voor het flikkerledje om te zien of er uberhaupt wat gebeurt
-	while (t < 6) {
-		if ((CHANGECP >> t) & 1 == true){ //t=nu het veranderde bit
-			if (bitRead(PINC, t) == true) { //Knop T ingedrukt (0-6)
+	
+					   
+//*********************************************************************************************************					   
+					   //dit dient alleen voor het flikkerledje om te zien of er uberhaupt wat gebeurt
+	while (tic < 6) {
+		if ((CHANGECP >> tic) & 1 == true){ //t=nu het veranderde bit
+			if (bitRead(PINC, tic) == true) { //Knop T ingedrukt (0-6)
 			}
-			if (FLASH == 0 ) FLASH = t+1; //**** laat ledje aantal keer flashen, geeft aan welke knop is ingedrukt
+			if (FLASH == 0 ) FLASH = tic+1; //**** laat ledje aantal keer flashen, geeft aan welke knop is ingedrukt
 		}
-
-		t++;
+		tic ++;
 	}
 	//if (CHANGECP > 0) PORTB ^= (1 << PORTB3); //toggle PIN11 Led.
 	OLDCP = PINC; //Kopieer huidige PINC 
@@ -441,11 +476,6 @@ void INPUTCOMMANDS() { //leest schakelaars PORTC
 //****************************************************************************************************
 }
 
-ISR(TIMER2_COMPB_vect) {
-
-	SLOWEVENTS();
-	}
-
 void SLOWEVENTS() {
 	SCOUNTER++;  //Counter voor het aantal doorlopen van deze VOID
 	if (bitRead(PIND,PIND4)!= BUT1) {//  (digitalRead(4) != BUT1) { //knopstatus veranderd
@@ -470,19 +500,95 @@ void SLOWEVENTS() {
 		}
 	}
 
-	INPUTCOMMANDS();
+
+}
+
+void TRAINLOOP() {
+
+	if (bitRead(GPIOR2, 1) == false) {
+		//command ready false
+		//zoek nieuw commando 
+		//als geen commando te vinden... dan boolean NEWCOMMAND=false 
+		//dan versturen van een idle command 
+		// do slow events (knoppen enzo)
+
+		// hier dus een nieuw command zoeken.
+		if (NEWCOMMAND == false) {
+			GPIOR0 = AD;
+			GPIOR1 = DT;
+			//eerste twee bytes verzonden dus ByteCounter naar 2, clear ByteFree flags, zijn niet meer vrij
+			BC = 2;
+			bitClear(GPIOR2, 4);
+			bitClear(GPIOR2, 5);
+		}
+		GPIOR2 |= (1 << 1);  //COMMAND READY naar waar
+	}
+	else
+	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
+		if (BC <= BT) { //geen Bytes meer te verzenden	//check het NIET acieve register
+
+			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register
+											   //check of register vrij is:
+				if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
+					GPIOR1 = ER;
+					bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
+					BC++;
+				}
+			}
+			else { //Register GPIOR1= actieve register, dus de andere vullen 
+				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is
+					GPIOR0 = ER;
+					bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
+					BC++;
+				}
+			}
+		}
+		else { //Geen byte meer te verzenden 
+			bitSet(GPIOR2, 2); //laatste byte is doorgegeven.
+		}
+	}
 }
 
 void INPUTLOOP() {
+
+	static byte r, c, ad; //teller kolom, Rij, teller commands en adres max 255 ...!
+
+	//KOLOM hoeft niet, in INPUTCOMMAND() worden de kolommen afgelopen, in KOLOM staat nu het actieve kolom waar de switch event in is gevonden. 
+	
 	if (bitRead(SWREG, 0) == true) { // nieuwe switches, ingedrukte schakelaars.
-	//	RIJ en KOLOM bepalen nu het adres.
+	//	RIJ en KOLOM hebben de port met nieuwe drukknop.
+			// Serial.println("Hier...");			
+			r = 0; 
+			c = 0;
+			ad = 0;	
+
+			while (r < 8) {
+				if(bitRead(RIJ, r) == true) {
 
 
-
-
-		bitSet(SWREG, 0); //set status flag weer false
+					//Vrije plek voor een command zoeken in CREG[] tsnn cccc bit T=false  
+					while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
+						if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
+							bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
+							bitSet(CREG[c], 7); //claim dit command geheugen
+							bitSet(CREG[c], 2); //zet uitvoer counter op 4.
+							ad = ((KOLOM * 8) + c) * 2;//adres decimaal bepalen
+							CMSB[c] = MEMORIE[ad]; //haal MSB uit geheugen straks EEPROM
+							CLSB[c] = MEMORIE[ad + 1];  //Haal LSB
+							CERROR[c] = CMSB[c] ^ CLSB[c];
+							KNOPSTATUS[KOLOM] ^= (1 << c); //zet on/off invert, voor deze schakelaar
+							if (bitRead(KNOPSTATUS[KOLOM], c) == true) CLSB[c] |= (1<<3) ; //set ON (off is default uit Memorie)
+							bitClear(SWREG, 0); //cleared de flag, commando('s) zijn uitgevoerd. 
+							c = 10;
+						}
+						c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
+					}
+				}
+				r ++;
+			}
+			WRITECOMMANDS();
+		//bitSet(SWREG, 0); //set status flag weer false
 	}
-
 }
 
 void loop()
@@ -491,6 +597,7 @@ void loop()
 	//tijdens ontwerp knoppen even uit
 	//TRAINLOOP();
 	INPUTLOOP();
+
 	}
 
 
