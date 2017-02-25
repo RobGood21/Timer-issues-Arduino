@@ -66,6 +66,7 @@ volatile boolean BUT1 = false;
 volatile int SCOUNTER = 0;
 int CS = 0; //Commandstatus
 int i; //teller voor loop functies in train
+int nc;
 
 
 //TRAINLOOP
@@ -84,15 +85,13 @@ boolean DEBUG = false; //false; //toont alle teksten als true
 //straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
 byte MEMORIE[16];
 
-
-
 //Declaraties voor INPUTCOMMAND
 byte OLDCP = 0; //Oude status van C port register
 byte CHANGECP = 0; //veranderde bits
 
 byte RIJ=0;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
 byte KOLOM=0; //voorlopig 1 kolom
-byte SWREG=0; // byte voor 8 flags bit0= nieuw ingedrukte schakelaar (true).
+byte PREG=0; // Public register voor 8 booleans
 
 //unsigned int CADRES[10]; //gevonden adres van de knop, corresponderend met een geheugen adres waar command instaat
 byte CREG[10]; //status van dit command adres
@@ -106,17 +105,14 @@ byte KNOPSTATUS[8];  //onthoud de laatste stand van de accessoire door deze knop
 //Tijdelijk voor flikkerledje
 int tic; //Teller loop functies in INPUTCOMMAND
 int til; //Teller voor INPUTLOOP()
-int FLASH = 0; //hoevaak led moet flashen
-int FLASHTIMER = 0; //duur van de flash
-
-
-
+//int FLASH = 0; //hoevaak led moet flashen
+//int FLASHTIMER = 0; //duur van de flash
 
 void RUNTRAIN(boolean onoff) { //start of stopt de controller
 
 	digitalWrite(7, onoff); //zet gewoon de H-brug uit
 
-cli(); //disable interrupts
+//cli(); //disable interrupts
 /*
 	if (onoff == true) {
 
@@ -154,139 +150,158 @@ void TRAIN() { //set timer en outputs, de trein van datapulsen
 	GPIOR1 = 0; //General purpose register 0, holds Byte to be send
 	GPIOR2 = 0; //General Purpose register holds Flags, booleans.
 
-	DDRB |= (1 << DDB1); //set PIN 9 als output Aangestuurd uit OCRA1
-	DDRB |= (1 << DDB2); //set PIN 10 als output, wordt getoggled in de ISR
+    DDRB |= (1 << DDB1); //set PIN 9 als output Aangestuurd uit OCRA1
+	DDRB |= (1 << DDB2); //set PIN 10 als output, wordt getoggled in de ISR	
+
+	//PORTB |= (1 << PORTB2); //Zet PIN10 hoog
 
 
 	 //interrupts tijdelijk ondebreken
 	TCCR1A = 0; //initialiseer register NODIG!
 	TCCR1B = 0; //initialiseer register NODIG!
+	
 	TCCR1B |= (1 << WGM12); //CTC mode	
-	TCCR1B |= (1 << CS11); //CS12 zet prescaler (256?) CS11 voor prescaler 8
-	OCR1A=116; //zet TOP waarde counter bij prescaler 256 1sec (standard timing true bit)
-	TCNT1 = 0; //set timer1 op 0 BOTTOM waarde counter
+	TCCR1B |= (1 << CS11); //CS12 zet prescaler (256?) CS11 voor prescaler 8, CS10 voor geen prescaler
+
+	OCR1AH = B00000000;
+	OCR1AL = B01110011; //112;//   116; //zet TOP waarde counter bij prescaler 256 1sec (standard timing true bit)	
+	//TCNT1 = 50; //set timer1 op 0 BOTTOM waarde counter
+
+
+
 	TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, bij true toggle output
+	//TCCR1A |= (1 << COM1B0);
+
+
+
 	TIMSK1 |= (1 << OCIE1A); //interrupt op bereiken TOPwaarde
-	PORTB |= (1 << PORTB1); //clear port B1 (pin9)
+
+	//PORTB |= (1 << PORTB1); //clear port B1 (pin9)	//
 	//PORTB |= (1 << PORTB2); //set portb2 1 (pin10)
 	sei(); //interupts weer toestaan
 	
 }
 
-
-
 ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
 	//Variabele DEBUG toont op de serial monitor de bits en bytes zoals bepaald en verzonden. Controller doet het dan
 	//niet meer vanwege timing. 
-	cli(); //disable interrupts
-	PORTB ^= (1 << PORTB2); //toggles PIN10, better do this with a hardware inverter. 
+//	cli(); //disable interrupts
+	// PORTB ^= (1 << PORTB2); //toggles PIN10, better do this with a hardware inverter. 
+
 	GPIOR2 ^= (1 << 0); //toggle het BITPART deel, als BITPART=false dan is het bit klaar >> nieuw bit bepalen.
 	if (bitRead(GPIOR2, 0) == true) { //bit is klaar .. verder
 
 		switch (CS) { //CS=Commandstatus ) 0=Wacht op Command; 1=Preample zenden; 2=Tussenbit zenden; 3=Byte verzenden 
-		case 0: //Wacht
-			//Topwaarde wordt niet aangepast, timer gaat gewoon door met trues zenden	
-			//test Commandready
 
-if (DEBUG==true) Serial.println("wacht op COMMAND");
-			
-				if (bitRead(GPIOR2, 1) == true) 
-					//COMMANDready == true er is een NIEUW COMMAND bepaald en verzending ervan start.
-					//COMMANDready == false er is nog GEEN command bepaald, gewoon weer een 1 bit sturen.
+		case 0: //Wacht	//Topwaarde wordt niet aangepast, timer gaat gewoon door met trues zenden	//test Commandready
+			i++; //verhoog preample teller, preample tijdens wachten op command
+
+//if (DEBUG==true) Serial.println("wacht op COMMAND");			
+
+				if (bitRead(GPIOR2, 1) == true) //COMMANDready == true
 			{
 				CS = 1; //nu volgende true bit preample verzenden 
-				i = 0; //teller reset
+				// i = 0; //teller reset niet meer 25feb
 			}
 			break;//(0)  
 
 		case 1: //send preample
 			//registers resetten
-			bitClear(GPIOR2, 3); // niet nodig?
+			bitClear(GPIOR2, 3); //Laatste byte is false, nieuw command
 
-if (DEBUG == true) {
-	Serial.print("Preample: "); 
-	Serial.println(i);
-}
-			if (i < 14) {
+//if (DEBUG == true) {
+	//Serial.print("Preample: "); 
+	//Serial.println(i);
+//}
+			if (i < 14) { //is lengte preample dus minimaal 14
 				i++;
 			}
 			else {
-				CS = 2; //15 true bits verzonden nu een false bit
-				i = 7; //teller al instellen voor 1e byte
-			//	Serial.println("");
+				CS = 2; //15 true bits verzonden nu een false bit als volgend bit
+			//	i = 7; //25feb dubbel? teller al instellen voor 1e byte //	Serial.println("");
 			}
 			break; //(1)
 
 		case 2: //send Tussenbit
 
-if (DEBUG == true) {
-	Serial.print("Laatstebyte LOOP():");	
-	Serial.print(bitRead(GPIOR2, 2)); 
-	Serial.print("    Laatste Byte interrupt:  "); 
-	Serial.println(bitRead(GPIOR2, 3));
-}
+//if (DEBUG == true) {
+//	Serial.print("Laatstebyte LOOP():");	
+//	Serial.print(bitRead(GPIOR2, 2)); 
+//	Serial.print("    Laatste Byte interrupt:  "); 
+//	Serial.println(bitRead(GPIOR2, 3));
+//}
 
-			if (bitRead(GPIOR2, 3) == true) { //Laatste byte interrupt = true, laatste byte is verzonden nu uitspringen
-				if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >> 1);
+			if (bitRead(GPIOR2, 3) == true) { //Laatste byte flag = true, laatste byte is verzonden nu uitspringen
+
+				bitClear(OCR1AL, 7); //instellen op 1 bit
 				bitClear(GPIOR2, 1); //COMMANDready naar false, dus GEEN command in behandeling, LOOP() zet deze weer true als een command in de byte registers is gezet.
 				CS = 0; //volgende doorlopp wachten op nieuw command..
 				GPIOR2 |= (1 << 4); //reset Bytefree register GPIOR0
-				GPIOR2 |= (1 << 5); //reset BYTEfree register GPIOR1
-				GPIOR2 &= (0 << 6);
+				GPIOR2 |= (1 << 5); //reset BYTEfree register GPIOR1	
 
-if(DEBUG==true) Serial.println("Command ready");
+
+				//???????????????????????????????????????????????????
+				//bitSet(GPIOR2, 6);		
+				//GPIOR2 &= (0 << 6); //?????  moet zijn clear BYTEpointer naar GPIOR0 of zo??
+				GPIOR2 = 0; //B0000000;  bovenstaande doet dit.... dit klopt niet ...toch?
+
+
+
+//if(DEBUG==true) Serial.println("Command ready");
 										
 			}
-			else {
-				if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
-if (DEBUG==true) Serial.println("tussenbit");
+			else { //Laatste byte niet verzonden
+				bitSet(OCR1AL, 7); //verhoog teller met 128
+
+
+//if (DEBUG==true) Serial.println("tussenbit");
 
 				CS = 3; //volgende doorloop naar byte verzenden.
 				i = 7; //reset bitcounter
-				if (bitRead(GPIOR2, 2) == true) bitSet(GPIOR2, 3); //Laatste byte  flag true, verkregen uit LOOP() bij volgende doorloop van T(ussenbit) uitspringen, 
-				//true bits zenden wachten op nieuw command
+				if (bitRead(GPIOR2, 2) == true) bitSet(GPIOR2, 3); //Laatste byte  flag true, verkregen uit LOOP() bij volgende doorloop van T(ussenbit) uitspringen.
 			}
 			break;//(2)
 
 		case 3: //send Byte MSB first
 
-if (DEBUG == true) {
-	Serial.print("byte:  ");	
-	Serial.print(bitRead(GPIOR2, 6)); 
-	Serial.print("   Bit:  "); Serial.print(i);
-}
+//if (DEBUG == true) {
+//	Serial.print("byte:  ");	
+//	Serial.print(bitRead(GPIOR2, 6)); 
+//	Serial.print("   Bit:  "); Serial.print(i);
+//}
 
-			if (bitRead(GPIOR2, 6) == false) { //BYTEpointer true= GPIOR0, false = GPIOR1,  bepalen welke byteregister wordt verstuurd
+			if (bitRead(GPIOR2, 6) == false) { //BYTEpointer false= GPIOR0, true = GPIOR1
 
-if (DEBUG == true) {
-	Serial.print("   Bitwaarde:  ");
-	Serial.println(bitRead(GPIOR0, i));
-}
+//if (DEBUG == true) {
+//	Serial.print("   Bitwaarde:  ");
+//	Serial.println(bitRead(GPIOR0, i));
+//}
 
 				if (bitRead(GPIOR0, i) == true) {
-					if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >> 1);
+					bitClear(OCR1AL, 7);
+					//if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >> 1);
 
 				}
 				else {
-					if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
-
+					bitSet(OCR1AL, 7);
+						//if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
 				}
-
 				i--;
 				if (i < 0) bitSet(GPIOR2, 4); //dit was het laatste bit dus BYTEfree wordt true
-
 			}
 			else { //GPIOR1 register sturen
 
-if (DEBUG == true) {
-	Serial.print("   Bitwaarde:  "); 
-	Serial.println(bitRead(GPIOR1, i));
-}
+//if (DEBUG == true) {
+//	Serial.print("   Bitwaarde:  "); 
+//	Serial.println(bitRead(GPIOR1, i));
+//}
 				if (bitRead(GPIOR1, i) == true) {
-					if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >>1);
+					bitClear(OCR1AL, 7);
+					//if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >>1);
 				}
 				else {
-					if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
+					bitSet(OCR1AL, 7);
+					//if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
 				}
 				i--;
 				if (i < 0) bitSet(GPIOR2, 5);
@@ -294,21 +309,35 @@ if (DEBUG == true) {
 			if (i < 0) {
 				GPIOR2 ^= (1 << 6); //toggle bytepointer				
 				CS = 2; //naar tussenbit
-				if (DEBUG == true)	Serial.println("Bytepointer getoggeld");
+//if (DEBUG == true)	Serial.println("Bytepointer getoggeld");
 			}
 			break; //(3)
 			}
 	} //bit is niet klaar, gebeurt gewoon niks
-	sei(); //Enable interrupts
+//	sei(); //Enable interrupts
 }
 
 ISR(TIMER2_COMPB_vect) {
-
+	PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms.
 	SLOWEVENTS();
 	INPUTCOMMAND();
 	}
 
+void SHOWBYTE(byte beit) {
+	static int b; //tellers
+	b = 7;
+	//	Serial.println();
+		Serial.print("BYTE= ");
+			while (b >= 0) {
+			Serial.print(bitRead(beit, b));
+			b--;
+
+		}
+			Serial.println();
+}
+
 void WRITECOMMANDS() {
+
 	//Toont de inhoud van de commandregisters
 	static int w, b; //tellers
 	w = 0;
@@ -351,6 +380,7 @@ void WRITECOMMANDS() {
 
 }
 
+
 void TRAINSETUP() { //instellen interrups voor knoppen en zo
 	//Startstop knop staat op PIN4
 	cli(); //disable interrupts	
@@ -362,20 +392,22 @@ void TRAINSETUP() { //instellen interrups voor knoppen en zo
 	PORTD |= (1 << PORTD7); //Enable H-bridge
 	DDRD &= ~(1 << DDD5); //PIN 5 (PORTD4) input met pullup weerstand stellen
 	PORTD |= (1 << PORTD5); // pull up intern inschakelen zodat de SHORT functie optioneel wordt. Als PIN7 Hoog is draait de controller
+	// Timer2, slowevents and inputs control
 	TIMSK2 |= (1 << OCIE2B); // enable de OCR2B interrupt van Timer2
 	TCNT2 = 0; //Set Timer 2 bottom waarde
-	TCCR2B |= (1 << CS22); //set prescaler
+	TCCR2B |= (1 << CS22); //set prescaler 
 	TCCR2B |= (1 << CS21); //set prescaler
-	TCCR2B |= (1 << CS20); //set prescaler
+	TCCR2B |= (1 << CS20); //set prescaler op 1024, result overflow every 16 millisec.
 	OCR2B = 100; //timerclock wordt NIET gereset dus frequency bepaald door overflow en prescaler
 
 	sei(); //enable interrupts
 }
 
 void INPUTSETUP() {
+
 	//Alleen voor knoppen ontwerp mag weg straks
-	pinMode(12, OUTPUT);
-	digitalWrite(12, HIGH);
+	//pinMode(12, OUTPUT);
+	//digitalWrite(12, HIGH);
 	//******************************
 
 }
@@ -388,14 +420,13 @@ void setup()
 	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
 	PORTB |= (1 << PORTB3); //Set high, led off
 	PINC = 0; //clear alle inputs
-	OLDCP = PINC; //kopieer huidige PINC
-
-	INPUTSETUP(); //Setup routine voor inputzaken
-
+	OLDCP = PINC; //kopieer huidige PINC	
 
 //voor ontwerp knoppen en command berekening even uitzetten
+
 	TRAINSETUP();
-	//TRAIN();
+	TRAIN();
+	//INPUTSETUP(); //Setup routine voor inputzaken kan weg...
 
 //tijdelijk even commandoos in een byte array plaatsen
 	MEMORIE[0] = B10000000; 
@@ -425,7 +456,8 @@ void setup()
 	
 }
 
-void INPUTCOMMAND() { //leest schakelaars PORTC
+void INPUTCOMMAND() { //leest schakelaars PORTC, called from timer2
+
 	tic = 0; //reset  teller input command
 
 	//tijdelijk gebruik van het input register van PORTC dit moet straks 1 van de 8 uit shiftregister verkregen knopstatus bytes worden.
@@ -433,47 +465,18 @@ void INPUTCOMMAND() { //leest schakelaars PORTC
 	//dus een while die de 8 registers doorloopt, PINC is dan die verkregen byte uit het shiftregister
 
 	CHANGECP = OLDCP ^ PINC; //XOR nieuwe situatie C port met situatie vorige doorloop, straks data uit shiftregisters
+
 	RIJ = CHANGECP & PINC; //veranderde pinstatus and pinstatus is true, dus ingedrukte schakelaar. Byte doorgeven aan loop
-	KOLOM = 0; // voorlopig slechts 1 kolom dus 8 schakelaars, hier starks een while loop voor alle kolommen. 
-	if(RIJ > 0) SWREG |= (1 << 0); //Als een true switch event set flag nieuwe switch, verwerken in Loop. 
-
-
 	
-					   
-//*********************************************************************************************************					   
-					   //dit dient alleen voor het flikkerledje om te zien of er uberhaupt wat gebeurt
-	while (tic < 6) {
-		if ((CHANGECP >> tic) & 1 == true){ //t=nu het veranderde bit
-			if (bitRead(PINC, tic) == true) { //Knop T ingedrukt (0-6)
-			}
-			if (FLASH == 0 ) FLASH = tic+1; //**** laat ledje aantal keer flashen, geeft aan welke knop is ingedrukt
-		}
-		tic ++;
-	}
-	//if (CHANGECP > 0) PORTB ^= (1 << PORTB3); //toggle PIN11 Led.
-	OLDCP = PINC; //Kopieer huidige PINC 
+	KOLOM = 0; // voorlopig slechts 1 kolom dus 8 schakelaars, hier starks een while loop voor alle kolommen. 
 
-//*****************************************************************************************************
-	//*****heel verhaal om de led te laten flitsen en aan te geven welke switchstatus is veranderd.
-	if (FLASHTIMER < 1 && FLASH > 0 ) {	
-		PORTB ^= (1 << PORTB3); //toggle pin 11 led	
+	if (RIJ > 0) INPUTFC(); //INPUT FIND COMMAND, //SWREG |= (1 << 0); //Als een true switch event set flag nieuwe switch, verwerken in Loop. 	  
 
-		if (bitRead(PINB,PINB3) == true) { //led weer uit
-			if (FLASH > 0) {
-				PORTB &= ~(1 << PORTB3); //Set pin11 laag, led aan
-				FLASHTIMER = 5;
-				FLASH--;
-			}		
-		}
-		else {
-			FLASHTIMER = 5;
-		}
-	}		
-	else { //flashtimer niet 0
-		FLASHTIMER--;
-		if (FLASHTIMER < 1 && FLASH < 1) bitSet(PORTB, PORTB3);
-	}
-//****************************************************************************************************
+	//supersimplele feedback, de echte moet hier ergens komen? Of beter als het Command is verzonden.
+	 if (CHANGECP > 0) {
+		 OLDCP = PINC;
+		 PORTB ^= (1 << 3); //toggle het signaal ledje op PIN 11
+	 }
 }
 
 void SLOWEVENTS() {
@@ -503,41 +506,151 @@ void SLOWEVENTS() {
 
 }
 
+void INPUTFC() {
+	static byte r, c, ad; //teller kolom, Rij, teller commands en adres max 255 ...!
+
+	//KOLOM hoeft niet, in INPUTCOMMAND() worden de kolommen afgelopen, in KOLOM staat nu het actieve kolom waar de switch event in is gevonden. 
+	
+	//if (bitRead(SWREG, 0) == true) { // nieuwe switches, ingedrukte schakelaars.
+	//	RIJ en KOLOM hebben de port met nieuwe drukknop.
+			//Serial.println(RIJ);			
+	//Serial.println("hier...");
+	//SHOWBYTE(RIJ);
+
+			r = 0; 
+			c = 0;
+			ad = 0;	
+			while (r < 8) {
+			
+				if(bitRead(RIJ, r) == true) {
+
+					//Serial.print(r);
+
+					//Vrije plek voor een command zoeken in CREG[] tsnn cccc bit T=false  
+					while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
+						if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
+
+							//Serial.println("dit mag maar 1 keer");
+
+							bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
+							bitSet(CREG[c], 7); //claim dit command geheugen
+							bitSet(CREG[c], 2); //zet uitvoer counter op 4.
+							ad = ((KOLOM * 8) + r) * 2;//adres decimaal bepalen kolom x 6 + gevonden bit in RIJ
+							CMSB[c] = MEMORIE[ad]; //haal MSB uit geheugen straks EEPROM
+							CLSB[c] = MEMORIE[ad + 1];  //Haal LSB							
+							KNOPSTATUS[KOLOM] ^= (1 << r); //zet on/off invert, voor deze schakelaar
+							if (bitRead(KNOPSTATUS[KOLOM], r) == true) CLSB[c] |= (1<<3) ; //set ON (off is default uit Memorie)
+							CERROR[c] = CMSB[c] ^ CLSB[c];
+							c = 10;
+						}
+						c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
+					}
+				}	
+			r ++;
+			}
+
+			//WRITECOMMANDS(); //Voor debug, toont de bytes in de command arrays, kills dcctrain
+			//bitSet(SWREG, 0); //set status flag weer false
+	//}
+}
+
 void TRAINLOOP() {
 
-	if (bitRead(GPIOR2, 1) == false) {
-		//command ready false
-		//zoek nieuw commando 
-		//als geen commando te vinden... dan boolean NEWCOMMAND=false 
-		//dan versturen van een idle command 
-		// do slow events (knoppen enzo)
+	static byte CBYTE[3]; //static geheugen voor het actieve Commando
+    int b; //teller en flag voor new command helaas hele byte?
+	byte part;
 
-		// hier dus een nieuw command zoeken.
-		if (NEWCOMMAND == false) {
-			GPIOR0 = AD;
-			GPIOR1 = DT;
-			//eerste twee bytes verzonden dus ByteCounter naar 2, clear ByteFree flags, zijn niet meer vrij
-			BC = 2;
-			bitClear(GPIOR2, 4);
-			bitClear(GPIOR2, 5);
+	if (bitRead(GPIOR2, 1) == false) { //nieuw command nodig
+		b = 0;
+		nc = 0;
+
+	
+		while (b < 10) { //Loop testing Command array
+			if (bitRead(CREG[b], 7) == true) { //(a)    command gevonden
+
+				if (bitRead(CREG[b],5) == true) { //(b) Timerbit
+
+					bitClear(CREG[b], 5);
+					bitClear(CREG[b], 4); //reset de pauze timer
+
+					CREG[b] = CREG[b] - 1; //verlaagt de counter. 
+					part = CREG[b];
+					part = part << 5;
+
+					//SHOWBYTE(part);
+
+					if (part == 0) CREG[b] = 0; //counter op nul, CREG en command array vrij geven.
+
+					//SHOWBYTE(CREG[b]);
+
+
+					CBYTE[0] = CMSB[b];
+					CBYTE[1] = CLSB[b];
+					CBYTE[2] = CERROR[b];
+					b = 10; //uitspingen als command is gevonden
+					nc = 1;
+
+					// Serial.println("command geladen");
+
+				}
+				else { //(b) timerbit5 = false
+
+					if (bitRead(PREG, 0) == true) { //timer hoog
+
+						CREG[b] |= (1 << 4); // bitSet(CREG[b], 4);
+
+					}
+					else { //timer laag
+
+						if (bitRead(CREG[b], 4) == true) CREG[b] |= (1 << 5); //bitSet(CREG[b], 5);
+					}
+				}
+			} //(a)
+			b++;
 		}
-		GPIOR2 |= (1 << 1);  //COMMAND READY naar waar
+
+
+		if (nc == 0) {
+			CBYTE[0] = B11111111; //laad idle command
+			CBYTE[1] = B00000000;
+			CBYTE[2] = B11111111;
+		}
+
+		GPIOR0 = CBYTE[0];  //laad eerste byte van command
+		GPIOR1 = CBYTE[1]; //laad tweede byte van command
+
+		BC = 2;
+		bitClear(GPIOR2, 4); //clear flag byte free (dus niet meer vrij)
+		bitClear(GPIOR2, 5); //Clear flag byte free
+
+		//******dit moet aan
+		 GPIOR2 |= (1 << 1);  //COMMAND READY naar waar, kan misschien hogerop? Scheelt een byte
+
+		// if (nc == 1) SHOWBYTE(GPIOR0); if (nc==1) SHOWBYTE(GPIOR1);
+
 	}
 	else
 	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
 		if (BC <= BT) { //geen Bytes meer te verzenden	//check het NIET acieve register
 
-			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register
-											   //check of register vrij is:
+			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register   //check of register vrij is:
+
 				if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
-					GPIOR1 = ER;
+
+					GPIOR1 = CBYTE[2]; //Laad Byte3 van command
+
+					//if (nc == 1) SHOWBYTE(GPIOR1);
+
 					bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
 					BC++;
 				}
 			}
 			else { //Register GPIOR1= actieve register, dus de andere vullen 
 				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is
-					GPIOR0 = ER;
+					
+					GPIOR0 = CBYTE[2];
+					// if (nc == 1) SHOWBYTE(GPIOR0);
+
 					bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
 					BC++;
 				}
@@ -549,54 +662,13 @@ void TRAINLOOP() {
 	}
 }
 
-void INPUTLOOP() {
-
-	static byte r, c, ad; //teller kolom, Rij, teller commands en adres max 255 ...!
-
-	//KOLOM hoeft niet, in INPUTCOMMAND() worden de kolommen afgelopen, in KOLOM staat nu het actieve kolom waar de switch event in is gevonden. 
-	
-	if (bitRead(SWREG, 0) == true) { // nieuwe switches, ingedrukte schakelaars.
-	//	RIJ en KOLOM hebben de port met nieuwe drukknop.
-			// Serial.println("Hier...");			
-			r = 0; 
-			c = 0;
-			ad = 0;	
-
-			while (r < 8) {
-				if(bitRead(RIJ, r) == true) {
-
-
-					//Vrije plek voor een command zoeken in CREG[] tsnn cccc bit T=false  
-					while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
-						if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
-							bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
-							bitSet(CREG[c], 7); //claim dit command geheugen
-							bitSet(CREG[c], 2); //zet uitvoer counter op 4.
-							ad = ((KOLOM * 8) + c) * 2;//adres decimaal bepalen
-							CMSB[c] = MEMORIE[ad]; //haal MSB uit geheugen straks EEPROM
-							CLSB[c] = MEMORIE[ad + 1];  //Haal LSB
-							CERROR[c] = CMSB[c] ^ CLSB[c];
-							KNOPSTATUS[KOLOM] ^= (1 << c); //zet on/off invert, voor deze schakelaar
-							if (bitRead(KNOPSTATUS[KOLOM], c) == true) CLSB[c] |= (1<<3) ; //set ON (off is default uit Memorie)
-							bitClear(SWREG, 0); //cleared de flag, commando('s) zijn uitgevoerd. 
-							c = 10;
-						}
-						c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
-					}
-				}
-				r ++;
-			}
-			WRITECOMMANDS();
-		//bitSet(SWREG, 0); //set status flag weer false
-	}
-}
 
 void loop()
 {
 	
 	//tijdens ontwerp knoppen even uit
-	//TRAINLOOP();
-	INPUTLOOP();
+	TRAINLOOP();
+	//INPUTLOOP();
 
 	}
 
