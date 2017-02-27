@@ -64,8 +64,8 @@ Altenatieve functies van belang: datasheet ATMEL 14.3.1 Alternate Functions of P
 volatile boolean BUT1OS = true;
 volatile boolean BUT1 = false;
 volatile int SCOUNTER = 0;
-int CS = 0; //Commandstatus
-int i; //teller voor loop functies in train
+int CS = 0; //Commandstatus beter unsigned integer (aanpassen)
+int i; //teller voor loop functies in train, noet signed zijn...wordt negatief,  hier nog naar kijken is onhandig.
 int nc;
 
 
@@ -234,16 +234,28 @@ ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine, verzorgt he
 			if (bitRead(GPIOR2, 3) == true) { //Laatste byte flag = true, laatste byte is verzonden nu uitspringen
 
 				bitClear(OCR1AL, 7); //instellen op 1 bit
-				bitClear(GPIOR2, 1); //COMMANDready naar false, dus GEEN command in behandeling, LOOP() zet deze weer true als een command in de byte registers is gezet.
 				CS = 0; //volgende doorlopp wachten op nieuw command..
-				GPIOR2 |= (1 << 4); //reset Bytefree register GPIOR0
-				GPIOR2 |= (1 << 5); //reset BYTEfree register GPIOR1	
+				//GPIOR2 register vullen
+				//bit0 = bitpart, is true, anders komen we niet hier, blijft true
+				//bit1= Command ready, naar 0 
+				//bit2=Laatste byte flag van uit LOOP, true=laatste byte
+				//bit3=Laatste byte flag in de ISR, true is laatste byte
+				//bit4=GP register te verzenden byte GPIOR0 true=vrij false is bezet
+				//bit5=GP register te verzenden byte GPIOR1 true=vrij 0=bezet
+				//bit6=Byte pointer true=GPIOR1 false = GPIOR0
+				//bit 7=nc
 
+	GPIOR2 = B00110001; //Flag register instellen voor nieuw command
 
-				//???????????????????????????????????????????????????
-				//bitSet(GPIOR2, 6);		
+				//bitClear(GPIOR2, 1); //COMMANDready naar false, dus GEEN command in behandeling, LOOP() zet deze weer true als een command in de byte registers is gezet.
+				//GPIOR2 |= (1 << 4); //reset Bytefree register GPIOR0
+				//GPIOR2 |= (1 << 5); //reset BYTEfree register GPIOR1	
 				//GPIOR2 &= (0 << 6); //?????  moet zijn clear BYTEpointer naar GPIOR0 of zo??
-				GPIOR2 = 0; //B0000000;  bovenstaande doet dit.... dit klopt niet ...toch?
+
+				//??????????????????????????????????????????????????? bovenstaande regels gaven het halve effect? Maar waarom...?
+
+				
+				
 
 
 
@@ -251,8 +263,7 @@ ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine, verzorgt he
 										
 			}
 			else { //Laatste byte niet verzonden
-				bitSet(OCR1AL, 7); //verhoog teller met 128
-
+				bitSet(OCR1AL, 7); //verhoog OCR1A counter met 128, zend een 0 bit
 
 //if (DEBUG==true) Serial.println("tussenbit");
 
@@ -277,36 +288,33 @@ ISR(TIMER1_COMPA_vect)  {// timer compare interrupt service routine, verzorgt he
 //	Serial.println(bitRead(GPIOR0, i));
 //}
 
-				if (bitRead(GPIOR0, i) == true) {
+				if (bitRead(GPIOR0, i) == true) { //een 1 bit
 					bitClear(OCR1AL, 7);
-					//if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >> 1);
-
 				}
-				else {
+				else { //een 0 bit
 					bitSet(OCR1AL, 7);
-						//if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
 				}
-				i--;
-				if (i < 0) bitSet(GPIOR2, 4); //dit was het laatste bit dus BYTEfree wordt true
+				i--; //teller naar vorig bit
+				if (i < 0) bitSet(GPIOR2, 4); //laatste bit verzonden, byte vrijgeven true =vrij
 			}
-			else { //GPIOR1 register sturen
+			else { //Bytepointer=true, GPIOR1 register sturen
 
 //if (DEBUG == true) {
 //	Serial.print("   Bitwaarde:  "); 
 //	Serial.println(bitRead(GPIOR1, i));
 //}
-				if (bitRead(GPIOR1, i) == true) {
+				if (bitRead(GPIOR1, i) == true) { //een 1 bit
 					bitClear(OCR1AL, 7);
 					//if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >>1);
 				}
-				else {
+				else { //een 0 bit
 					bitSet(OCR1AL, 7);
 					//if (bitRead(OCR1AL, 7) == false) OCR1A = (OCR1A << 1);
 				}
-				i--;
-				if (i < 0) bitSet(GPIOR2, 5);
+				i--; //bitteller naar vorig bit
+				if (i < 0) bitSet(GPIOR2, 5); //laatste bit verzonden, byte vrijgeven true =vrij
 			}
-			if (i < 0) {
+			if (i < 0) { //laatste bit verzonden 
 				GPIOR2 ^= (1 << 6); //toggle bytepointer				
 				CS = 2; //naar tussenbit
 //if (DEBUG == true)	Serial.println("Bytepointer getoggeld");
@@ -429,25 +437,25 @@ void setup()
 	//INPUTSETUP(); //Setup routine voor inputzaken kan weg...
 
 //tijdelijk even commandoos in een byte array plaatsen
-	MEMORIE[0] = B10000000; 
-	MEMORIE[1] = B11110000; //adres0 activate off
+	MEMORIE[0] = B10000001; //waarom hier een 1 op het laatste bit????
+	MEMORIE[1] = B11111000; //adres0 activate off
 
-	MEMORIE[2] = B10000000;
-	MEMORIE[3] = B11110001; //adres1 deactivate off
+	MEMORIE[2] = B10000001;
+	MEMORIE[3] = B11111010; //adres1 deactivate off
 
-	MEMORIE[4] = B10000000;
-	MEMORIE[5] = B11110010; //adres2 activate off
+	MEMORIE[4] = B10000001;
+	MEMORIE[5] = B11111100; //adres2 activate off
 
-	MEMORIE[6] = B10000000;
-	MEMORIE[7] = B11110011; //adres3 activate off
+	MEMORIE[6] = B10000001;
+	MEMORIE[7] = B11111110; //adres3 activate off
 
-	MEMORIE[8] = B10000000;
+	MEMORIE[8] = B10000000; //?? adressering verder uitzoeken
 	MEMORIE[9] = B11110100; //adres4 deactivate off
 
-	MEMORIE[10] = B10000101;
+	MEMORIE[10] = B10000101; //??
 	MEMORIE[11] = B11110101; //adres5 activate off
 
-	MEMORIE[12] = B10000000;
+	MEMORIE[12] = B10000000; //??
 	MEMORIE[13] = B11110110; //adres6 activate off
 
 	MEMORIE[14] = B10000000;
@@ -539,7 +547,7 @@ void INPUTFC() {
 							CMSB[c] = MEMORIE[ad]; //haal MSB uit geheugen straks EEPROM
 							CLSB[c] = MEMORIE[ad + 1];  //Haal LSB							
 							KNOPSTATUS[KOLOM] ^= (1 << r); //zet on/off invert, voor deze schakelaar
-							if (bitRead(KNOPSTATUS[KOLOM], r) == true) CLSB[c] |= (1<<3) ; //set ON (off is default uit Memorie)
+							if (bitRead(KNOPSTATUS[KOLOM], r) == true) CLSB[c] |= (1<<0) ; //set r/l adres +1 
 							CERROR[c] = CMSB[c] ^ CLSB[c];
 							c = 10;
 						}
@@ -595,13 +603,10 @@ void TRAINLOOP() {
 				}
 				else { //(b) timerbit5 = false
 
-					if (bitRead(PREG, 0) == true) { //timer hoog
-
+					if (bitRead(PREG, 0) == true) { //timer voor tijd tussen dezelfde commando's
 						CREG[b] |= (1 << 4); // bitSet(CREG[b], 4);
-
 					}
 					else { //timer laag
-
 						if (bitRead(CREG[b], 4) == true) CREG[b] |= (1 << 5); //bitSet(CREG[b], 5);
 					}
 				}
@@ -618,8 +623,7 @@ void TRAINLOOP() {
 
 		GPIOR0 = CBYTE[0];  //laad eerste byte van command
 		GPIOR1 = CBYTE[1]; //laad tweede byte van command
-
-		BC = 2;
+		BC = 2; //eerste twee bytes geladen
 		bitClear(GPIOR2, 4); //clear flag byte free (dus niet meer vrij)
 		bitClear(GPIOR2, 5); //Clear flag byte free
 
@@ -629,35 +633,33 @@ void TRAINLOOP() {
 		// if (nc == 1) SHOWBYTE(GPIOR0); if (nc==1) SHOWBYTE(GPIOR1);
 
 	}
-	else
-	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
-		if (BC <= BT) { //geen Bytes meer te verzenden	//check het NIET acieve register
 
+	//************MERKOP dit wordt heel vaak doorlopen, misschien moet dit met een test van een flag?
+	else	{ //geen nieuw commando nodig maar misschien wel een nieuw BYTE
+		if (BC <= BT) { //geen Bytes meer te verzenden, anders check het NIET acieve register of het vrij is.
 			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register   //check of register vrij is:
 
 				if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
-
 					GPIOR1 = CBYTE[2]; //Laad Byte3 van command
-
 					//if (nc == 1) SHOWBYTE(GPIOR1);
-
 					bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
 					BC++;
 				}
 			}
 			else { //Register GPIOR1= actieve register, dus de andere vullen 
-				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is
-					
+				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is					
 					GPIOR0 = CBYTE[2];
 					// if (nc == 1) SHOWBYTE(GPIOR0);
-
 					bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
 					BC++;
 				}
 			}
 		}
-		else { //Geen byte meer te verzenden 
-			bitSet(GPIOR2, 2); //laatste byte is doorgegeven.
+		else {// BC > BT Geen byte meer te verzenden 
+			if (bitRead(GPIOR2,3) == false) bitSet(GPIOR2, 2); //laatste byte is doorgegeven, alleen zetten als laatste byte in interrupt nog false is
+
+			///***************DIT KLOPT NIET.... bit telkens opnieuw gezet
+
 		}
 	}
 }
