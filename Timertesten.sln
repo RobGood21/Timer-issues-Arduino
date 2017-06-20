@@ -7,7 +7,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Timertesten", "Timertesten.
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DCCtrain", "DCCtrain\DCCtrain.vcxproj", "{C5F80730-F44F-4478-BDAE-6634EFC2CA88}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Leds", "..\Leds\Leds.vcxproj", "{308397C4-5AF0-41FD-9BCF-A84CDEDD49FE}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Leds", "Leds\Leds.vcxproj", "{308397C4-5AF0-41FD-9BCF-A84CDEDD49FE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
