@@ -2,116 +2,82 @@
  Name:		Leds.ino
  Created:	6/20/2017 8:39:57 AM
  Author:	Rob Antonisse
- description: Many different tests and try-outs. For using many to infinite leds. Knowledge needed for various projects in Wisselmotor. nl. 
- 
+ description: Many different tests and try-outs. For using many to infinite leds. Knowledge needed for various projects in Wisselmotor. nl.
+
 */
+
+//declaraties
 unsigned long Tijd;
 unsigned long Periode;
+//tbv LEDS
+const int AantalPORTS = 5; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
+byte PORTS[AantalPORTS]; // declareer array
+
 
 void setup() {
-	/* Poort instellen, PORTC  Pins A0...A5  Poort PC0...PC5
-
-	pinMode(A0, OUTPUT);
-	pinMode(A1, OUTPUT);
-	pinMode(A2, OUTPUT);
-	
-	*/
+	// Poort instellen, PORTC  Pins A0...A5  Poort PC0...PC5
 	LedSetup();
 	Serial.begin(9600);
 
 	//indicatie ledje. gebeurt er wel wat...?
 	pinMode(13, OUTPUT);
 	digitalWrite(13, HIGH);
-
 	Tijd = millis();
 }
+void LedMatrixSetup(){
+	/*
+	Rijen R0 = A4   R1=B5  R2=B4  R3=A1  R4=B2  R5=A2  R6=A6 R7=A7
+	koppen  K0=B3  K1=B6  K2=B1  K3=B7  K4=A3  K5=B0 K6=A5  K7A0
 
-//************* LEDS
+	alle rijen komen direct aan de ports Staan bij False Hoog.
+	Alle koppen komen via 220ohm aan de ports Staan bij false laag.
 
-byte WAARDE = B00000000;
-
-const int AantalBytes = 2;
-byte BYTEout[AantalBytes]; // aantal te verzenden bytes
-
-//hoort eigenlijk in de ledloop
-	int STATUS = 100;  //voortgang proces
-	int SBiT = 0; //gestuurd bit, bitcounter
-	byte SendByte=0;
-	int ByteCount = 0;
-
+	Rijen komen op PORTS[2]
+	koppen komen op ports[3]
+	*/
+	PORTS[2] = B11111111; // alle hoog zodat alles uit is
 
 
-
-
+}
 void LedSetup() { //leds aansturen dmv een shiftregister 
-
-	DDRC |= (1 << PC0); // set A0 as output = shiftclock 
-	DDRC |= (1 << PC1); //set A1 as output = shift Latch 
-	DDRC |= (1 << PC2); //set A2 as output =Data in 
-
+	DDRC |= (1 << PC0); // set A0 as output = shiftclock  (pin11)
+	DDRC |= (1 << PC1); //set A1 as output = shift Latch  (pin12)
+	DDRC |= (1 << PC2); //set A2 as output =Data in (Pin14)
 	//nulstellen alle Byteout
-	for (int i = 0; i < AantalBytes; i++) {
-		BYTEout[i] = B00000000;
-	}
+
+	for (int i = 0; i < AantalPORTS; i++) {
+		PORTS[i] = B00000000;
+			}
+	LedMatrixSetup(); // volgorde belangrijk. 
 
 
 }
 
-void GetByte(int n) { // bepaal het volgende te zenden byte
-	
-
-	switch (n) {
-		/*
-		Het aantal shiftregisters staat hier in Bytes
-		dus byteout[0] het eerste register in de rij, byteout[1] de tweede en byteout[n] de n-de (-1) 
-		De verschillende bits in deze bytes zijn de pins, outputs die we willen uitschuiven. 
-		Eigenlijk hoeft hier dus niks te gebeuren. Als andere programma delen deze bytes aanpasse om een gewenste functie uit te sturen
-		Alleen als we bv, een teller of een andere automatische beweging willen kan hier deze op de bytes worden toepast
-		
-		*/
-	case 0:
-		// 1e byte wordt ff doorgeschoven dus 
-		if (bitRead(BYTEout[1], 1) == true) {
-			BYTEout[0] = B00000000;
-		}
-		else {
-			BYTEout[0] = B11111111;
-		}
-				//BYTEout[0] = B11111111; // eereste byte
-		break;
-	case 1: // dit is een teller op de tweede shift register
-		BYTEout[1] = BYTEout[1] + B00000001;  //tweede byte
-		if (BYTEout[1] == B11111111) BYTEout[1] = B00000000;
-
-		break;
-	}
-}
-
-void LedLoop() {
-		//aan/uit status van 8 leds via een shiftregister instellen Data staat in out
+void LedLoop() { /
+/*
+zet continue de PORTS[n] in schuifregisters, toont deze. 
+Per doorloop wordt maar 1 instructie gedaan, bv schuif door-plaats bit- zet outputs schuifregisters gelijk aan de inhoud ervan. 
+Hierdoor is de footprint van dit klein, zal waarschijnlijk geen timer issues geven. 
+*/		
 		bitClear(PORTC, 0); //shiftclock false
-
-	// Serial.println(STATUS);
-	// Serial.println(WAARDE);
+		static int STATUS = 100;  //voortgang proces
+		static int SBiT = 0; //gestuurd bit, bitcounter
+		static byte SendByte = 0;
+		static int ByteCount = AantalPORTS-1;
 
 	switch (STATUS) {
 		case 100 : //begin proces
-//te verzenden Byte ophalen , voorlopig maar 1 byte
-
-			if (ByteCount  < AantalBytes) {
-				SendByte = BYTEout[ByteCount]; // BYTEout[ByteCount-1]; dit komt straks
+			if (ByteCount  >= 0) {
+				SendByte = PORTS[ByteCount];
 			STATUS = 101;
 			SBiT = 0;
-			ByteCount ++;
-			GetByte(ByteCount);
+			ByteCount --;
 			}
-			else { //alle bytes verzonden
-				//outputs shiftregisters tonen
+			else { //alle bytes verzonden //outputs shiftregisters tonen
 				bitSet(PORTC, 1);
 				STATUS = 102;
 			}
 	break;
-
 		case 101: //bits sturen
 			if (bitRead(SendByte, SBiT) == true) {
 				bitSet(PORTC, 2);
@@ -119,35 +85,16 @@ void LedLoop() {
 			else {
 				bitClear(PORTC, 2);
 			}
-
 			bitSet(PORTC, 0); //set shift clock true
 			SBiT ++; //volgende bit
-
 			if (SBiT > 7) STATUS = 100; //bij volgende doorloop terug naar 100
 			break;
-
 		case 102: // Outputs worden getoond
 			bitClear(PORTC, 1); 
-			delay(300); //voor test hier ff wachten
-
-			//WAARDE = WAARDE + B00000001;
-			//if (WAARDE == B11111111) WAARDE = B00000000;
-
-			//cyclus opnieuw
-			STATUS = 100;
-			ByteCount = 0;
-			GetByte(ByteCount); //bepaal waarde van eerste byte
-
-			//indicatie ledje 
-			if (digitalRead(13) == HIGH) {
-				digitalWrite(13, LOW);
-			}
-			else {
-				digitalWrite(13, HIGH);
-			}
+			STATUS = 100; 
+			ByteCount = AantalPORTS-1; //cyclus opnieuw
 			break;
-
-	default:
+			default:
 	break;
 }
 }
@@ -196,42 +143,76 @@ void LoopLicht() { // laad ledje lopen
 
 void KloK() {
 	static int i = 0;
+	static byte r=B11111110; // rijen voor uit HOOG
+	static byte k; //kollomen voor uit LAAG
+	byte b;
 	i++;
-	switch(i){
-	case 0:
-		BYTEout[0] = B11111100;
+	switch (i) {
+	case 10:
+		b = B11111100;
+		i = 0;
+		r = r << 1;
+		r = r + B00000001;
+		k = B00000000;
+		if (bitRead(PORTS[3],7)==false) r = B11111110;
+		
 		break;
 	case 1:
-
+		b = B01100000;
+		k = B00000001;
 		break;
 	case 2:
+		b = B11011010;
+		k = B00000010;
 		break;
 	case 3:
+		b = B11110010;
+		k = B00000100;
 		break;
 	case 4:
+		b = B01100110;
+		k = k << 1;
 		break;
 	case 5:
+		b = B10110110;
+		k = k << 1;
 		break;
 	case 6:
+		b = B10111110;
+		k = k << 1;
 		break;
-		case 7:
-			break;
-		case 8:
-			break;
-		case 9:
-			break;
-		case 10:
-			i = 0;
-			break;
+	case 7:
+		b = B11100000;
+		k = k << 1; 
+		break;
+	case 8:
+		b = B11111110;
+		k = k << 1;
+		break;
+	case 9:
+		b = B11110110;
+		k = k << 1;
+				break;
+
+	}
+PORTS[2] = b;
+// PORTS[0] = PORTS[0] + B00000001;
+
+PORTS[3] = r;
+PORTS[4] = k;
+
+//teller op byte1
 
 
 }
 
 
 void loop() {
+
 //	LoopLicht();
 	LedLoop(); 
-if (millis()-Tijd>1000){ //'iedere seconde dus'
-	KloK();
-	Tijd = millis();
+	if (millis() - Tijd > 100) { //'iedere seconde dus'
+		KloK();
+		Tijd = millis();
+	}
 }
