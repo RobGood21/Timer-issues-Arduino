@@ -13,148 +13,103 @@ unsigned long Periode;
 const int AantalPORTS = 5; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
 byte PORTS[AantalPORTS]; // declareer array
 
+byte RijRegister = B00000000; // bevat ingelezen rij switches
+byte IORegist = B00000000; //bevat booleans voor de schakelaar, leds processen
+//bit7=nc  bit6=nc  bit5=nc  bit4=nc  bit 3=nc bit2=nc  bit1=nc  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
+
+
 
 void setup() {
 	// Poort instellen, PORTC  Pins A0...A5  Poort PC0...PC5
 	LedSetup();
 	Serial.begin(9600);
-
-	//indicatie ledje. gebeurt er wel wat...?
-	pinMode(13, OUTPUT);
-	digitalWrite(13, HIGH);
 	Tijd = millis();
-}
-void LedMatrixSetup(){
-	/*
-	Rijen R0 = A4   R1=B5  R2=B4  R3=A1  R4=B2  R5=A2  R6=A6 R7=A7
-	koppen  K0=B3  K1=B6  K2=B1  K3=B7  K4=A3  K5=B0 K6=A5  K7A0
-
-	alle rijen komen direct aan de ports Staan bij False Hoog.
-	Alle koppen komen via 220ohm aan de ports Staan bij false laag.
-
-	Rijen komen op PORTS[2]
-	koppen komen op ports[3]
-	*/
-	PORTS[2] = B11111111; // alle hoog zodat alles uit is
-
-
 }
 void LedSetup() { //leds aansturen dmv een shiftregister 
 	DDRC |= (1 << PC0); // set A0 as output = shiftclock  (pin11)
 	DDRC |= (1 << PC1); //set A1 as output = shift Latch  (pin12)
 	DDRC |= (1 << PC2); //set A2 as output =Data in (Pin14)
+	DDRB &= ~(1 << PB0); // set PORTB0 (PIN8-Arduino) as input
 	//nulstellen alle Byteout
-
-	for (int i = 0; i < AantalPORTS; i++) {
+	for (int i = 0; i < AantalPORTS; i++) { //clear all used ports
 		PORTS[i] = B00000000;
-			}
-	LedMatrixSetup(); // volgorde belangrijk. 
-
-
+	}
+	//PORTS[2] = ~PORTS[2]; //Invert Column port Matrix, not needed. 
 }
-
-void LedLoop() { /
-/*
-zet continue de PORTS[n] in schuifregisters, toont deze. 
-Per doorloop wordt maar 1 instructie gedaan, bv schuif door-plaats bit- zet outputs schuifregisters gelijk aan de inhoud ervan. 
-Hierdoor is de footprint van dit klein, zal waarschijnlijk geen timer issues geven. 
+void IOLoop() { //ioloop= in-out loop
+/* 
+zet continue de PORTS[n] in schuifregisters, toont deze.En leest de schakelaars uit. 
+Per doorloop wordt maar 1 instructie gedaan.
 */		
-		bitClear(PORTC, 0); //shiftclock false
-		static int STATUS = 100;  //voortgang proces
-		static int SBiT = 0; //gestuurd bit, bitcounter
-		static byte SendByte = 0;
-		static int ByteCount = AantalPORTS-1;
+		static int STATUS = 100;  //State of process
+		static int SBiT = 0; //bitcounter
+		static byte SendByte = 0;//Current byte in process
+		static int ByteCount = AantalPORTS-1; //number of to shift bytes
+		static byte PISO = B00000000; // Temporary register for reading of row switches
 
-	switch (STATUS) {
-		case 100 : //begin proces
+		bitClear(PORTC, 0); //clear shiftclock
+
+		switch (STATUS) {
+		case 100 : //start new cycle
+			PISO = B00000000; 
 			if (ByteCount  >= 0) {
 				SendByte = PORTS[ByteCount];
 			STATUS = 101;
 			SBiT = 0;
 			ByteCount --;
 			}
-			else { //alle bytes verzonden //outputs shiftregisters tonen
-				bitSet(PORTC, 1);
+			else { //alle bytes verzonden //outputs shiftregisters tonen; PISO register leest de inputs (schakelaars) per rij. 
+				bitSet(PORTC, 1); //set registerclock
 				STATUS = 102;
 			}
 	break;
 		case 101: //bits sturen
-			if (bitRead(SendByte, SBiT) == true) {
-				bitSet(PORTC, 2);
+				if (bitRead(SendByte, SBiT) == true) {
+				bitSet(PORTC, 2); //set outputs SIPO, read inputs PISO
 			}
 			else {
-				bitClear(PORTC, 2);
+				bitClear(PORTC, 2); 
 			}
-			bitSet(PORTC, 0); //set shift clock true
-			SBiT ++; //volgende bit
-			if (SBiT > 7) STATUS = 100; //bij volgende doorloop terug naar 100
+			if (bitRead(PINB,PB0)==true)bitSet(PISO, SBiT); //Get value output shiftregisters	
+			bitSet(PORTC, 0); //set shift clock
+			SBiT ++; //next bit
+			if (SBiT > 7) { //sending current byte ready
+				STATUS = 100;
+				if (bitRead(IORegist, 0) == true) { //Request for row read
+					if (ByteCount == 3) { // select PISO register
+						RijRegister = PISO; //return PISO register read
+						bitClear(IORegist, 0); //clear flag request
+					}
+				}
+			}
 			break;
-		case 102: // Outputs worden getoond
-			bitClear(PORTC, 1); 
-			STATUS = 100; 
-			ByteCount = AantalPORTS-1; //cyclus opnieuw
+		case 102: // lock in and outputs
+			bitClear(PORTC, 1); //clear register clock
+			STATUS = 100;
+			ByteCount = AantalPORTS-1;
 			break;
 			default:
 	break;
 }
 }
-void LoopLicht() { // laad ledje lopen
-	delay(100);
-	//indicatie ledje 
-	if (digitalRead(13) == HIGH) {
-		digitalWrite(13, LOW);
-	}
-	else {
-		digitalWrite(13, HIGH);
-	}
-
-	// LedLoop(); //bij iedere doorloop aanroepen LED functie
-
-	//1 bit true maken
-	bitSet(PORTC, 2); //data 1
-	delay(100);
-
-	bitSet(PORTC, 0); //clock shift
-	delay(100);
-
-	bitClear(PORTC, 0); //clock shift uit
-	delay(100);
-
-	bitClear(PORTC, 2); //data 0
-	delay(100);
-
-	bitSet(PORTC, 1); //toon 1
-	delay(100);
-
-	bitClear(PORTC, 1); //toon 0
-						//delay(1000);
-	
-	for (int i = 0; i < 8; i++) { //dus 8 x doen
-		bitSet(PORTC, 0); //shift 1
-		delay(100);
-		bitClear(PORTC, 0); //shift 0
-		delay(100);
-		bitSet(PORTC, 1); //toon 1
-		delay(100);
-		bitClear(PORTC, 1); //toon 0
-		delay(100);
-	}
-}
-
 void KloK() {
+
+	//PORTS[4] = B00000001;
+	//PORTS[3] = B01111111;
 	static int i = 0;
 	static byte r=B11111110; // rijen voor uit HOOG
-	static byte k; //kollomen voor uit LAAG
+	static byte k; //kolommen voor uit LAAG
 	byte b;
 	i++;
-	switch (i) {
+		switch (i) {
 	case 10:
 		b = B11111100;
 		i = 0;
 		r = r << 1;
 		r = r + B00000001;
 		k = B00000000;
-		if (bitRead(PORTS[3],7)==false) r = B11111110;
+
+		//if (bitRead(PORTS[3],7)==false) r = B11111110;
 		
 		break;
 	case 1:
@@ -196,23 +151,58 @@ void KloK() {
 
 	}
 PORTS[2] = b;
-// PORTS[0] = PORTS[0] + B00000001;
-
-PORTS[3] = r;
-PORTS[4] = k;
-
-//teller op byte1
-
 
 }
+void SwitchLoop() {	//leest de schakelaars
+	static int fase = 0;
+	static byte Rk = B10000000; //ReadKolom
+	switch (fase) {
+	case 0: //load column to SIPO shiftregister for switches
+		PORTS[1] = Rk;
+		fase = 1;		
+		break;
+	case 1: // kolom geplaatst; rij laten laden in IOloop.
+		bitSet(IORegist, 0); //set flag
+		fase = 2;
+		break;
+	case 2:
+		if (bitRead(IORegist, 0) == false) { //flag cleared, row loaded
+			PORTS[3] = ~RijRegister; //load inverted row to led matrix
+			PORTS[4] = Rk; //colums to ledmatrix
 
+			//Serial.print("Rijregister=   ");
+			//Serial.println(PORTS[3]);
 
+			//Serial.print("kolomregister=   "); 
+			//Serial.println(PORTS[4]);
+
+			fase = 3;
+		}
+		break;
+
+	case 3: //next column
+		switch (Rk) {
+		case B00000000:
+			Rk = B00000001;
+			break;
+		case B10000000:
+			Rk = B00000001;
+			break;
+			default:
+			Rk=Rk << 1;	
+			break;
+		}
+		fase = 0; //reset new cycle
+		break;		
+	}
+}
 void loop() {
 
 //	LoopLicht();
-	LedLoop(); 
-	if (millis() - Tijd > 100) { //'iedere seconde dus'
-		KloK();
+	IOLoop(); 
+	if (millis() - Tijd > 1) { //'iedere seconde dus'
+		//KloK();
+		SwitchLoop();
 		Tijd = millis();
 	}
 }
