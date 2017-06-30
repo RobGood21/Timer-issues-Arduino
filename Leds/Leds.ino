@@ -8,15 +8,44 @@
 
 //declaraties
 unsigned long Tijd;
-unsigned long Periode;
+unsigned long T2 = 0;
+unsigned int Periode=0;
 //tbv LEDS
 const int AantalPORTS = 5; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
 byte PORTS[AantalPORTS]; // declareer array
-
+//0=PISO 1=SIPO voor switches 2=teller 3=rijen ledmatrix 4=kolommen ledmatrix
 byte RijRegister = B00000000; // bevat ingelezen rij switches
 byte IORegist = B00000000; //bevat booleans voor de schakelaar, leds processen
-//bit7=nc  bit6=nc  bit5=nc  bit4=nc  bit 3=nc bit2=nc  bit1=nc  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
+//bit7=nc  bit6=nc  bit5=nc  bit4=nc  bit 3=nc bit2=nc  bit1=SSC switch status changed  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
 
+void TimerSetup() {
+	cli();
+	// Timer2, slowevents and inputs control
+	TIMSK2 |= (1 << OCIE2B); // enable de OCR2B interrupt van Timer2
+	TCNT2 = 0; //Set Timer 2 bottom waarde
+	TCCR2B = 0;
+
+	// TCCR2B |= (1 << CS22); //set prescaler 
+	//TCCR2B |= (1 << CS21); //set prescaler
+	//No Prescaler timing dus 1byte = system clock/255
+	TCCR2B |= (1 << CS20); //set prescaler op 1024, result overflow every 16 millisec.
+
+	OCR2B = 100; //timerclock wordt NIET gereset dus frequency bepaald door overflow en prescaler
+	sei();
+}
+ISR(TIMER2_COMPB_vect) {
+
+	IOLoop();
+	/*
+	// slow indicatie op led 13
+	Periode++;
+	if (Periode > 10000) {
+		PORTB ^= (1 << PB5);
+
+		Periode = 0;
+	}
+*/
+}
 
 
 void setup() {
@@ -24,6 +53,10 @@ void setup() {
 	LedSetup();
 	Serial.begin(9600);
 	Tijd = millis();
+	T2 = millis();
+	pinMode(13, OUTPUT);
+
+	TimerSetup();
 }
 void LedSetup() { //leds aansturen dmv een shiftregister 
 	DDRC |= (1 << PC0); // set A0 as output = shiftclock  (pin11)
@@ -34,13 +67,13 @@ void LedSetup() { //leds aansturen dmv een shiftregister
 	for (int i = 0; i < AantalPORTS; i++) { //clear all used ports
 		PORTS[i] = B00000000;
 	}
-	//PORTS[2] = ~PORTS[2]; //Invert Column port Matrix, not needed. 
 }
 void IOLoop() { //ioloop= in-out loop
 /* 
 zet continue de PORTS[n] in schuifregisters, toont deze.En leest de schakelaars uit. 
 Per doorloop wordt maar 1 instructie gedaan.
 */		
+
 		static int STATUS = 100;  //State of process
 		static int SBiT = 0; //bitcounter
 		static byte SendByte = 0;//Current byte in process
@@ -87,15 +120,17 @@ Per doorloop wordt maar 1 instructie gedaan.
 			bitClear(PORTC, 1); //clear register clock
 			STATUS = 100;
 			ByteCount = AantalPORTS-1;
+
+			// digitalWrite(13, ~ digitalRead(13));
+			SwitchLoop();
+			LedLoop();
+
 			break;
 			default:
 	break;
 }
 }
 void KloK() {
-
-	//PORTS[4] = B00000001;
-	//PORTS[3] = B01111111;
 	static int i = 0;
 	static byte r=B11111110; // rijen voor uit HOOG
 	static byte k; //kolommen voor uit LAAG
@@ -153,6 +188,45 @@ void KloK() {
 PORTS[2] = b;
 
 }
+
+byte SwitchRow[8] = { 0, 0, 0, 0, 0, 0, 0,0 };
+byte LedRow[8] = { 0,0,0,0,0,0,0,0 };
+byte SwitchChanged;
+int CColums = 0; //column in processing
+
+void Switched(byte k, byte r) {//handles switches
+	//uitzoeken welke column is gemeten
+
+	for (int i = 0; i < 8; i++) {
+		//Serial.println(k);
+		if (bitRead(k, i) == true) CColums = i;
+		//i = 10;
+	}	
+	//xor het gemeten rij met de vorige meting
+	SwitchChanged = r ^ SwitchRow[CColums];
+	SwitchRow[CColums] = r; //save new rowstate
+	//bitSet(IORegist, 1); //set changed flag
+	
+	for (int i = 0; i < 8; i++) {
+		if (bitRead(SwitchChanged, i) == true) { 
+			if (bitRead(r, i) == true) { //found switch has become true
+				LedRow[CColums] ^= 1 << i;
+			}
+			
+			/*
+			
+			Serial.print("kolom   :");
+			Serial.println(CColums);
+			Serial.print("rij   :");
+			Serial.println(i);
+			delay(1000);
+*/
+		}
+	}
+
+}
+
+
 void SwitchLoop() {	//leest de schakelaars
 	static int fase = 0;
 	static byte Rk = B10000000; //ReadKolom
@@ -167,19 +241,11 @@ void SwitchLoop() {	//leest de schakelaars
 		break;
 	case 2:
 		if (bitRead(IORegist, 0) == false) { //flag cleared, row loaded
-			PORTS[3] = ~RijRegister; //load inverted row to led matrix
-			PORTS[4] = Rk; //colums to ledmatrix
-
-			//Serial.print("Rijregister=   ");
-			//Serial.println(PORTS[3]);
-
-			//Serial.print("kolomregister=   "); 
-			//Serial.println(PORTS[4]);
-
+			//uitzoeken welke schakelaars zijn verandered
+			Switched(Rk, RijRegister);
 			fase = 3;
 		}
 		break;
-
 	case 3: //next column
 		switch (Rk) {
 		case B00000000:
@@ -196,13 +262,79 @@ void SwitchLoop() {	//leest de schakelaars
 		break;		
 	}
 }
+void LedLoop() { 
+
+static int t = 0;
+
+	byte r; //ports[3] (geinverteerd)
+	static byte kolom; // = B00000000; //ports[4]
+
+	switch (t){
+
+	case 0:
+		kolom = B00000001;	
+		break;
+	
+	default:
+		kolom=kolom << 1;
+		break;
+	}
+
+//Serial.println(t);
+//Serial.println(kolom);
+
+
+	r = LedRow[t];
+
+	
+
+			PORTS[4] = kolom; //colums to ledmatrix
+			//PORTS[3] = B11100111;
+			PORTS[3] = ~ r; //load inverted row to led matrix
+			/*
+			
+
+			if (r > 0) {			
+			Serial.print("kolom....: ");
+			Serial.println(PORTS[4]);
+			Serial.print("rij....: ");
+			Serial.println(PORTS[3]);
+			delay(1000);
+			}
+*/
+			t++;
+			if (t == 8)t = 0;
+	}
+
+
+
 void loop() {
 
 //	LoopLicht();
-	IOLoop(); 
+	//IOLoop(); 
+	//delay(1);
+	
+	/*
+	
+
 	if (millis() - Tijd > 1) { //'iedere seconde dus'
 		//KloK();
 		SwitchLoop();
 		Tijd = millis();
 	}
+
+
+	if (millis() - T2 > 0) {
+		//LedLoop();
+		T2 = millis();
+	}
+
+*/
+
+
 }
+
+
+
+
+
