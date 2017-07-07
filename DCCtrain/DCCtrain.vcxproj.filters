@@ -15,11 +15,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="DCCtrain.ino" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="__vm\.DCCtrain.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="SchakelBord.ino" />
   </ItemGroup>
 </Project>
