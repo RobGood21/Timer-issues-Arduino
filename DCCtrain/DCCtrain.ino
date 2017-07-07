@@ -1,7 +1,8 @@
 /*
- Name:		DCCtrain.ino
- Created:	2/9/2017 10:17:20 PM
- Author:	Rob
+ Name:		Schakelbord.ino
+ Created:	2017 10:17:20 PM
+ Author:	Rob Antonisse
+ More info: www.wisselmotor.nl
 */
 
 // the setup function runs once when you press reset or power the board

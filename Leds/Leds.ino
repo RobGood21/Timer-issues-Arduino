@@ -11,12 +11,12 @@ unsigned long Tijd;
 unsigned long T2 = 0;
 unsigned int Periode=0;
 //tbv LEDS
-const int AantalPORTS = 5; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
+const int AantalPORTS = 4; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
 byte PORTS[AantalPORTS]; // declareer array
-//0=PISO 1=SIPO voor switches 2=teller 3=rijen ledmatrix 4=kolommen ledmatrix
+//0=PISO 1=SIPO voor switches 2=rijen ledmatrix 3=kolommen ledmatrix
 byte RijRegister = B00000000; // bevat ingelezen rij switches
 byte IORegist = B00000000; //bevat booleans voor de schakelaar, leds processen
-//bit7=nc  bit6=nc  bit5=nc  bit4=nc  bit 3=nc bit2=nc  bit1=SSC switch status changed  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
+//bit7=nc  bit6=nc  bit5=nc  bit4=nc  bit 3=nc bit2=OpstartTest true=aan false=uit  bit1=SSC switch status changed  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
 
 void TimerSetup() {
 	cli();
@@ -47,7 +47,53 @@ ISR(TIMER2_COMPB_vect) {
 */
 }
 
+void LedTest() { //bij opstarten alle leds even laten oplichten
+	static int t = 0;
+	static int Doorloop = 0;
+	static int Bitcount = 0;
+	static byte Temp=B00000000;
+	static int SPEED = 50;
+		t++;
+		if (t > SPEED) { 
+			t = 0;
+			//PORTS[1] = B11111111;
 
+	switch (Doorloop) {
+		case 0:
+			PORTS[3] = B00000001;
+			Temp = B00000001;
+			PORTS[2] = ~Temp;
+			Doorloop = 10;
+			Bitcount = 0;
+			break;
+
+		case 10:
+			PORTS[3] = PORTS[3] << 1;
+			Bitcount ++;
+
+			//Serial.println(PORTS[3]);
+
+			if (Bitcount == 8) {
+				Bitcount = 0;
+				Temp = Temp << 1;
+
+				PORTS[3] = B00000001;
+				PORTS[2] = ~Temp;
+
+				if (Temp == B00000000)Doorloop = 20; //alle rijen af gelopen
+
+				//if (Temp == B00000000)Doorloop = 0;
+								
+			}
+			break;
+		case 20:
+			PORTS[2] = B11111111;
+			PORTS[3] = 0;
+			bitClear(IORegist, 2); //verlaat test mode
+			break;
+	}
+}
+}
 void setup() {
 	// Poort instellen, PORTC  Pins A0...A5  Poort PC0...PC5
 	LedSetup();
@@ -55,8 +101,9 @@ void setup() {
 	Tijd = millis();
 	T2 = millis();
 	pinMode(13, OUTPUT);
-
 	TimerSetup();
+
+	bitSet(IORegist, 2); //test modus inschakelen
 }
 void LedSetup() { //leds aansturen dmv een shiftregister 
 	DDRC |= (1 << PC0); // set A0 as output = shiftclock  (pin11)
@@ -66,6 +113,8 @@ void LedSetup() { //leds aansturen dmv een shiftregister
 	//nulstellen alle Byteout
 	for (int i = 0; i < AantalPORTS; i++) { //clear all used ports
 		PORTS[i] = B00000000;
+
+		//PORTS[1] = B11111111; //?????waarom
 	}
 }
 void IOLoop() { //ioloop= in-out loop
@@ -109,7 +158,7 @@ Per doorloop wordt maar 1 instructie gedaan.
 			if (SBiT > 7) { //sending current byte ready
 				STATUS = 100;
 				if (bitRead(IORegist, 0) == true) { //Request for row read
-					if (ByteCount == 3) { // select PISO register
+					if (ByteCount+1 == 0) { // select PISO register, negative numbers not allowed.
 						RijRegister = PISO; //return PISO register read
 						bitClear(IORegist, 0); //clear flag request
 					}
@@ -121,9 +170,17 @@ Per doorloop wordt maar 1 instructie gedaan.
 			STATUS = 100;
 			ByteCount = AantalPORTS-1;
 
-			// digitalWrite(13, ~ digitalRead(13));
+			//LedTest(); //continue leds even late lopen
+
+			//hier het laden van de default, opgeslagen stand uitvoeren???
+			if (bitRead(IORegist, 2) == true) {
+				LedTest();
+			}
+			else {
 			SwitchLoop();
 			LedLoop();
+			}
+		
 
 			break;
 			default:
@@ -213,23 +270,21 @@ void Switched(byte k, byte r) {//handles switches
 				LedRow[CColums] ^= 1 << i;
 			}
 			
-			/*
+			
 			
 			Serial.print("kolom   :");
 			Serial.println(CColums);
 			Serial.print("rij   :");
 			Serial.println(i);
 			delay(1000);
-*/
+
 		}
 	}
 
 }
-
-
 void SwitchLoop() {	//leest de schakelaars
 	static int fase = 0;
-	static byte Rk = B10000000; //ReadKolom
+	static byte Rk = B1000000; //ReadKolom
 	switch (fase) {
 	case 0: //load column to SIPO shiftregister for switches
 		PORTS[1] = Rk;
@@ -288,9 +343,9 @@ static int t = 0;
 
 	
 
-			PORTS[4] = kolom; //colums to ledmatrix
+			PORTS[3] = kolom; //colums to ledmatrix
 			//PORTS[3] = B11100111;
-			PORTS[3] = ~ r; //load inverted row to led matrix
+			PORTS[2] = ~ r; //load inverted row to led matrix
 			/*
 			
 
@@ -305,9 +360,6 @@ static int t = 0;
 			t++;
 			if (t == 8)t = 0;
 	}
-
-
-
 void loop() {
 
 //	LoopLicht();
