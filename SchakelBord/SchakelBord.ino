@@ -4,65 +4,86 @@
  Author:	Rob Antonisse
  Info:		www.wisselmotor.nl
 */
+
+//tijdelijke en hulp declaraties en functies
+unsigned long tijd = 0;
+boolean DEBUG = false; //false; //toont alle teksten als true  //straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
+byte MEMORIE[16];
+//byte RIJ = 0;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
+//int tic; //Teller loop functies in INPUTCOMMAND
+byte KOLOM = 0; //wordt gebruikt in Testinput
+void Tijdelijk()
+{
+	/* Al gekopieerd naar setup
+	//tbv INPUTCOMMAND, tijdelijke pinnen tbv schakelaars en Leds.
+	//Voor schakelaars PORTC bit 0:5  (PINA0:PINA5) instellen als input dus false
+	DDRC = 0; //alle PORTC pins als input. ook de reset PORTC6
+	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
+	PORTB |= (1 << PORTB3); //Set high, led off
+	PINC = 0; //clear alle inputs
+	OLDCP = PINC; //kopieer huidige PINC	//voor ontwerp knoppen en command berekening even uitzetten
+	TRAINSETUP();
+	TRAIN();
+	*/
+	//INPUTSETUP(); //Setup routine voor inputzaken kan weg...
+
+	//tijdelijk even commandoos in een byte array plaatsen
+
+	MEMORIE[0] = B10000001; //waarom hier een 1 op het laatste bit????
+	MEMORIE[1] = B11111000; //adres0 activate off
+
+	MEMORIE[2] = B10000001;
+	MEMORIE[3] = B11111010; //adres1 deactivate off
+
+	MEMORIE[4] = B10000001;
+	MEMORIE[5] = B11111100; //adres2 activate off
+
+	MEMORIE[6] = B10000001;
+	MEMORIE[7] = B11111110; //adres3 activate off
+
+	MEMORIE[8] = B10000000; //?? adressering verder uitzoeken
+	MEMORIE[9] = B11110100; //adres4 deactivate off
+
+	MEMORIE[10] = B10000101; //??
+	MEMORIE[11] = B11110101; //adres5 activate off
+
+	MEMORIE[12] = B10000000; //??
+	MEMORIE[13] = B11110110; //adres6 activate off
+
+	MEMORIE[14] = B10000000;
+	MEMORIE[15] = B11110111; //adres7 deactivate off
+							 //totaal even een 8 schakelaars, commandoos.
+
+}
+
 //declaraties Switches Leds
-byte SwitchRow[8] = { 0, 0, 0, 0, 0, 0, 0,0 };
-byte LedRow[8] = { 0,0,0,0,0,0,0,0 };
+byte SwitchRow[8];// = { 0, 0, 0, 0, 0, 0, 0,0 };
+byte LedRow[8];// = { 0,0,0,0,0,0,0,0 };
 byte SwitchChanged;
 int CColums = 0; //column in processing
 const int AantalPORTS = 4; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
 int Periode;
-
 byte PORTS[AantalPORTS]; // declareer array
 						 //0=PISO 1=SIPO voor switches 2=rijen ledmatrix 3=kolommen ledmatrix
 byte RijRegister = B00000000; // bevat ingelezen rij switches
-byte IORegist = B00000000; 
+byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
 //bit7=nc  bit6=nc  bit5=nc  bit4=nc  bit 3=nc bit2=OpstartTest true=aan false=uit  bit1=SSC switch status changed  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
-
 //Declaraties DCC CS
 volatile boolean BUT1OS = true;
 volatile boolean BUT1 = false;
-volatile unsigned int SCOUNTER = 0;
+volatile unsigned int SCOUNTER = 0; 
 unsigned int CS = 0; //Commandstatus beter unsigned integer (aanpassen)
 int i; //teller voor loop functies in train, noet signed zijn...wordt negatief,  hier nog naar kijken is onhandig.
 int nc;
 int BC = 0; //=ByteCount Aantal verzonden bytes
 int BT = 3; //ByteTotal =aantal te verzenden bytes, //xxx declaraties voor debugging en testen
-boolean DEBUG = false; //false; //toont alle teksten als true  //straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
-byte MEMORIE[16];
-//Declaraties voor INPUTCOMMAND
-byte OLDCP = 0; //Oude status van C port register
-byte CHANGECP = 0; //veranderde bits
-byte RIJ = 0;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
-byte KOLOM = 0; //voorlopig 1 kolom
-byte PREG = 0; // Public register voor 8 booleans  //unsigned int CADRES[10]; //gevonden adres van de knop, corresponderend met een geheugen adres waar command instaat
+byte PREG = 0; // Public register voor 8 booleans
 byte CREG[10]; //status van dit command adres
 byte CMSB[10]; //msb van command komt uit eeprom geheugen ADRESCOMMAND
 byte CLSB[10]; //LSB van command komt uit eeprom geheugen ADRESCOMMAND + 1
 byte CERROR[10]; //XOR van MSB en LSB 
-byte KNOPSTATUS[8];  //onthoud de laatste stand van de accessoire door deze knop aangestuurd. (aan of uit),  //Tijdelijk voor flikkerledje
-int tic; //Teller loop functies in INPUTCOMMAND
-// void's voor DCC CS
-void RUNTRAIN(boolean onoff) { //start of stopt de controller
-	digitalWrite(7, onoff); //zet gewoon de H-brug uit
-	}
-
-void SetupDCC() { //Setup van de DCC controller.
-	cli(); // geen interrupts
-	GPIOR0 = 0; //General purpose register 0, holds Byte to be send
-	GPIOR1 = 0; //General purpose register 0, holds Byte to be send
-	GPIOR2 = 0; //General Purpose register holds Flags, booleans.
-	DDRB |= (1 << DDB1); //set PIN 9 als output Aangestuurd uit OCRA1
-	DDRB |= (1 << DDB2); //set PIN 10 als output, wordt getoggled in de ISR	
-	TCCR1A = 0; //initialiseer register 
-	TCCR1B = 0; //initialiseer register	
-	TCCR1B |= (1 << WGM12); //CTC mode	
-	TCCR1B |= (1 << CS11); //CS12 zet prescaler (256?) CS11 voor prescaler 8, CS10 voor geen prescaler
-	OCR1AH = B00000000;
-	OCR1AL = B01110011; //116 zet TOP waarde timer
-	TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, toggle op TOPwaarde
-	TIMSK1 |= (1 << OCIE1A); //interrupt enable
-	sei(); //interupts weer toestaan	
-}
+byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
+// functions
 ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
 						//Variabele DEBUG toont op de serial monitor de bits en bytes zoals bepaald en verzonden. Controller doet het dan
 						//niet meer vanwege timing. Debug mag straks weg. 
@@ -190,146 +211,35 @@ ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het
 			}
 			break; //(3)
 		}
-	} //bit is niet klaar, gebeurt gewoon niks
+
+//	}
+//	else { //bit is niet klaar, gebeurt gewoon niks
+//		IOLoop();
+
+	}
+	
 	sei(); //Enable interrupts
 }
-void Tijdelijk()
-{
-	/* Al gekopieerd naar setup
-	//tbv INPUTCOMMAND, tijdelijke pinnen tbv schakelaars en Leds. 
-	//Voor schakelaars PORTC bit 0:5  (PINA0:PINA5) instellen als input dus false
-	DDRC = 0; //alle PORTC pins als input. ook de reset PORTC6
-	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
-	PORTB |= (1 << PORTB3); //Set high, led off
-	PINC = 0; //clear alle inputs
-	OLDCP = PINC; //kopieer huidige PINC	//voor ontwerp knoppen en command berekening even uitzetten
-	TRAINSETUP();
-	TRAIN();
-	*/
-	//INPUTSETUP(); //Setup routine voor inputzaken kan weg...
+void SLOWEVENTS() {	
+	SCOUNTER++;  //Counter, creates pauze for short detectection
 
-	//tijdelijk even commandoos in een byte array plaatsen
-	MEMORIE[0] = B10000001; //waarom hier een 1 op het laatste bit????
-	MEMORIE[1] = B11111000; //adres0 activate off
-
-	MEMORIE[2] = B10000001;
-	MEMORIE[3] = B11111010; //adres1 deactivate off
-
-	MEMORIE[4] = B10000001;
-	MEMORIE[5] = B11111100; //adres2 activate off
-
-	MEMORIE[6] = B10000001;
-	MEMORIE[7] = B11111110; //adres3 activate off
-
-	MEMORIE[8] = B10000000; //?? adressering verder uitzoeken
-	MEMORIE[9] = B11110100; //adres4 deactivate off
-
-	MEMORIE[10] = B10000101; //??
-	MEMORIE[11] = B11110101; //adres5 activate off
-
-	MEMORIE[12] = B10000000; //??
-	MEMORIE[13] = B11110110; //adres6 activate off
-
-	MEMORIE[14] = B10000000;
-	MEMORIE[15] = B11110111; //adres7 deactivate off
-							 //totaal even een 8 schakelaars, commandoos.
-
-}
-
-void INPUTCOMMAND() { //leest schakelaars PORTC, called from timer2
-	/*
-	Hier moet vanalles aan worden gedaan...
-	*/
-
-
-
-	tic = 0; //reset  teller input command
-			 //tijdelijk gebruik van het input register van PORTC dit moet straks 1 van de 8 uit shiftregister verkregen knopstatus bytes worden.
-			 //Ook OLDCP wordt een array van 8 bytes dan. Voorlopig even met 1 byte werken. 
-			 //dus een while die de 8 registers doorloopt, PINC is dan die verkregen byte uit het shiftregister
-	CHANGECP = OLDCP ^ PINC; //XOR nieuwe situatie C port met situatie vorige doorloop, straks data uit shiftregisters
-	RIJ = CHANGECP & PINC; //veranderde pinstatus and pinstatus is true, dus ingedrukte schakelaar. Byte doorgeven aan loop	
-	KOLOM = 0; // voorlopig slechts 1 kolom dus 8 schakelaars, hier starks een while loop voor alle kolommen. 
-	if (RIJ > 0) INPUTFC(); //INPUT FIND COMMAND, //SWREG |= (1 << 0); //Als een true switch event set flag nieuwe switch, verwerken in Loop. 	  
-							//supersimplele feedback, de echte moet hier ergens komen? Of beter als het Command is verzonden.
-	if (CHANGECP > 0) {
-		OLDCP = PINC;
-		PORTB ^= (1 << 3); //toggle het signaal ledje op PIN 11
-	}
-}
-void SLOWEVENTS() {
-
-	SCOUNTER++;  //Counter voor het aantal doorlopen van deze VOID
-	if (bitRead(PIND, PIND4) != BUT1) {//  (digitalRead(4) != BUT1) { //knopstatus veranderd
+	if (bitRead(PIND, PIND4) != BUT1) { //DCC on/off switch
 		if (BUT1 == true) BUT1 = false;
-		else { //was false wordt nu true, nu output omzetten 
+		else { 
 			BUT1 = true;
 			BUT1OS = !BUT1OS;
 			digitalWrite(12, BUT1OS);
-			RUNTRAIN(BUT1OS);
+			digitalWrite(7, BUT1OS); //Switch H-bridge
 			if (BUT1OS == true) SCOUNTER = 7;
 		}
 	}
 	if (SCOUNTER > 10) {
-
-		if (bitRead(PIND, PIND5) == false) { // (digitalRead(5) == LOW) { = veel sneller
-											 //Serial.println(SCOUNTER);	
-											 //Serial.println();
+		if (bitRead(PIND, PIND5) == false) { //short detection 
 			BUT1OS = false;
-			RUNTRAIN(BUT1OS);
+			digitalWrite(7, BUT1OS); //Switch H-bridge
 			digitalWrite(12, BUT1OS);
 			SCOUNTER = 10;
 		}
-	}
-
-
-}
-
-void INPUTFC() { //input found command
-	/*
-	Hier moet de gevonden schakelaar verwerkt worden naar een commando
-	*/
-
-
-	static byte r, c, ad; //teller kolom, Rij, teller commands en adres max 255 ...!
-						  //KOLOM hoeft niet, in INPUTCOMMAND() worden de kolommen afgelopen, in KOLOM staat nu het actieve kolom waar de switch event in is gevonden. 
-
-						  //if (bitRead(SWREG, 0) == true) { // nieuwe switches, ingedrukte schakelaars.
-						  //	RIJ en KOLOM hebben de port met nieuwe drukknop.
-						  //Serial.println(RIJ);			
-						  //Serial.println("hier...");
-						  //SHOWBYTE(RIJ);
-
-	r = 0;
-	c = 0;
-	ad = 0;
-	while (r < 8) {
-
-		if (bitRead(RIJ, r) == true) {
-
-			//Serial.print(r);
-
-			//Vrije plek voor een command zoeken in CREG[] tsnn cccc bit T=false  
-			while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
-				if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
-
-													//Serial.println("dit mag maar 1 keer");
-
-					bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
-					bitSet(CREG[c], 7); //claim dit command geheugen
-					bitSet(CREG[c], 2); //zet uitvoer counter op 4.
-					ad = ((KOLOM * 8) + r) * 2;//adres decimaal bepalen kolom x 6 + gevonden bit in RIJ
-					CMSB[c] = MEMORIE[ad]; //haal MSB uit geheugen straks EEPROM
-					CLSB[c] = MEMORIE[ad + 1];  //Haal LSB							
-					KNOPSTATUS[KOLOM] ^= (1 << r); //zet on/off invert, voor deze schakelaar
-					if (bitRead(KNOPSTATUS[KOLOM], r) == true) CLSB[c] |= (1 << 0); //set r/l adres +1 
-					CERROR[c] = CMSB[c] ^ CLSB[c];
-					c = 10;
-				}
-				c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
-			}
-		}
-		r++;
 	}
 }
 void DCCLOOP() {
@@ -401,108 +311,46 @@ void DCCLOOP() {
 		}
 	}
 }
-
-//voids voor switches and leds
-void TimerSetup() {
-	cli();
-	DDRB |= (1 << DDB4); //Pin12, PORTB4 als Output
-	PORTB |= (1 << PORTB4); //Zet PIN12 hoog. (groene led)
-	DDRD |= (1 << DDD7); //PIN7 H-Bridge enable als output
-	PORTD |= (1 << PORTD7); //Enable H-bridge
-	DDRD &= ~(1 << DDD5); //PIN 5 (PORTD4) input met pullup weerstand stellen
-	PORTD |= (1 << PORTD5); // pull up inschakelen zodat de SHORT functie optioneel wordt.
-
-	// Timer2
-	TIMSK2 |= (1 << OCIE2B); // enable de OCR2B interrupt van Timer2
-	TCNT2 = 0; //Set Timer 2 bottom waarde
-	TCCR2B = 0;
-		// TCCR2B |= (1 << CS22); //set prescaler 
-	//TCCR2B |= (1 << CS21); //set prescaler
-	//No Prescaler timing dus 1byte = system clock/255
-	TCCR2B |= (1 << CS20); //set prescaler op 1024, result overflow every 16 millisec.
-		OCR2B = 100; //timerclock wordt NIET gereset dus frequency bepaald door overflow en prescaler
-	sei();
-}
 ISR(TIMER2_COMPB_vect) {
-	IOLoop();
-	
-	// slow 
-	Periode ++;
-	if (Periode > 5000) {
-	//PORTB ^= (1 << PB5);
+PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms.
+SwitchLoop();
 	SLOWEVENTS();
-	Periode = 0;
-	}
 }
-void LedTest() { //bij opstarten alle leds even laten oplichten
-	static int t = 0;
-	static int Doorloop = 0;
-	static int Bitcount = 0;
-	static byte Temp = B00000000;
-	static int SPEED = 50;
-	t++;
-	if (t > SPEED) {
-		t = 0;
-		switch (Doorloop) {
-		case 0:
-			PORTS[3] = B00000001;
-			Temp = B00000001;
-			PORTS[2] = ~Temp;
-			Doorloop = 10;
-			Bitcount = 0;
-			break;
-			case 10:
-			PORTS[3] = PORTS[3] << 1;
-			Bitcount++;
-			if (Bitcount == 8) {
-				Bitcount = 0;
-				Temp = Temp << 1;
+void TestInput() { //dient als een soort van DCC monitor, schakel adres 0 pe 6 seconden om.t
 
-				PORTS[3] = B00000001;
-				PORTS[2] = ~Temp;
-				if (Temp == B00000000)Doorloop = 20; //leave ledtest
-			}
-			break;
-		case 20:
-			PORTS[2] = B11111111;
-			PORTS[3] = 0;
-			bitClear(IORegist, 2); //verlaat test mode
-			break;
+	static byte r, c, ad; //teller kolom, Rij, teller commands en adres max 255 ...!
+						  //KOLOM hoeft niet, in INPUTCOMMAND() worden de kolommen afgelopen, in KOLOM staat nu het actieve kolom waar de switch event in is gevonden. 
+						  //if (bitRead(SWREG, 0) == true) { // nieuwe switches, ingedrukte schakelaars.
+						  //	RIJ en KOLOM hebben de port met nieuwe drukknop.
+						  //Serial.println(RIJ);			
+						  //Serial.println("hier...");
+						  //SHOWBYTE(RIJ);
+
+	r = 0;
+	c = 0;
+	ad = 0;
+	//Serial.print("jo");
+
+	//Vrije plek voor een command zoeken in CREG[] tsnn cccc bit T=false  
+	while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
+		if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
+
+											//Serial.println("dit mag maar 1 keer");
+
+											//bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
+			bitSet(CREG[c], 7); //claim dit command geheugen
+			bitSet(CREG[c], 2); //zet uitvoer counter op 4.
+			ad = 0;// ((KOLOM * 8) + r) * 2;//adres decimaal bepalen kolom x 8 + gevonden bit in RIJ
+			CMSB[c] = MEMORIE[ad]; //haal MSB uit geheugen straks EEPROM
+			CLSB[c] = MEMORIE[ad + 1];  //Haal LSB							
+			SwitchState[KOLOM] ^= (1 << r); //zet on/off invert, voor deze schakelaar
+			if (bitRead(SwitchState[KOLOM], r) == true) CLSB[c] |= (1 << 0); //set r/l adres +1 
+			CERROR[c] = CMSB[c] ^ CLSB[c];
+			c = 10;
 		}
+		c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
 	}
-}
-void setup() {
-	Serial.begin(9600);
-	//pinMode(13, OUTPUT);
-	LedSetup();
-	TimerSetup();
-	bitSet(IORegist, 2); //test modus inschakelen
 
-	//uit DCC CS
-	//tbv INPUTCOMMAND, tijdelijke pinnen tbv schakelaars en Leds. 
-	//Voor schakelaars PORTC bit 0:5  (PINA0:PINA5) instellen als input dus false
-	//DDRC = 0; //alle PORTC pins als input. ook de reset PORTC6
-
-	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
-
-	PORTB |= (1 << PORTB3); //Set high, led off
-	//PINC = 0; //clear alle inputs
-	//OLDCP = PINC; //kopieer huidige PINC	//voor ontwerp knoppen en command berekening even uitzetten
-	// TRAINSETUP();
-	SetupDCC();
-
-}
-void LedSetup() { //leds aansturen dmv een shiftregister 
-	DDRC |= (1 << PC0); // set A0 as output = shiftclock  (pin11)
-	DDRC |= (1 << PC1); //set A1 as output = shift Latch  (pin12)
-	DDRC |= (1 << PC2); //set A2 as output =Data in (Pin14)
-	DDRB &= ~(1 << PB0); // set PORTB0 (PIN8-Arduino) as input
-						 //nulstellen alle Byteout
-	for (int i = 0; i < AantalPORTS; i++) { //clear all used ports
-		PORTS[i] = B00000000;
-
-		//PORTS[1] = B11111111; //?????waarom
-	}
 }
 void IOLoop() { //ioloop= in-out loop
 				/*
@@ -564,33 +412,57 @@ void IOLoop() { //ioloop= in-out loop
 			LedTest();
 		}
 		else {
-			SwitchLoop();
+			//SwitchLoop();
 			LedLoop();
 		}
-
-
 		break;
 	default:
 		break;
 	}
 }
 void Switched(byte k, byte r) {//handles switches
-							   //uitzoeken welke column is gemeten
 
-	for (int i = 0; i < 8; i++) {
+int c = 0;
+int adress = 0;
+
+	for (int i = 0; i < 8; i++) { //kolom bepalen
 		//Serial.println(k);
 		if (bitRead(k, i) == true) CColums = i;
-		//i = 10;
 	}
 	//xor het gemeten rij met de vorige meting
 	SwitchChanged = r ^ SwitchRow[CColums];
 	SwitchRow[CColums] = r; //save new rowstate
-							//bitSet(IORegist, 1); //set changed flag
-
+	
 	for (int i = 0; i < 8; i++) {
 		if (bitRead(SwitchChanged, i) == true) {
 			if (bitRead(r, i) == true) { //found switch has become true
-				LedRow[CColums] ^= 1 << i;
+				LedRow[CColums] ^= 1 << i; //toggle indicatorled
+
+				
+
+				while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
+					if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
+
+														
+
+						//bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
+						bitSet(CREG[c], 7); //claim dit command geheugen
+						bitSet(CREG[c], 2); //zet uitvoer counter op 4.
+						adress = ((CColums * 8) + i) * 2;//adres decimaal bepalen kolom x 8 + gevonden bit in RIJ
+						CMSB[c] = MEMORIE[adress]; //haal MSB uit geheugen straks EEPROM
+						CLSB[c] = MEMORIE[adress + 1];  //Haal LSB							
+						SwitchState[CColums] ^= (1 << i); //zet on/off invert, voor deze schakelaar
+						if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 0); //set r/l adres +1 
+
+						//Serial.println(CMSB[c]);//("dit mag maar 1 keer");
+						//Serial.println(CLSB[c]);
+
+						CERROR[c] = CMSB[c] ^ CLSB[c];
+						c = 10;
+					}
+					c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
+				}
+
 			}
 
 			/*
@@ -622,7 +494,7 @@ void SwitchLoop() {	//leest de schakelaars
 	case 2:
 		if (bitRead(IORegist, 0) == false) { //flag cleared, row loaded
 											 //uitzoeken welke schakelaars zijn verandered
-			Switched(Rk, RijRegister);
+			Switched(Rk, RijRegister); //Move column and row..
 			fase = 3;
 		}
 		break;
@@ -640,6 +512,44 @@ void SwitchLoop() {	//leest de schakelaars
 		}
 		fase = 0; //reset new cycle
 		break;
+	}
+}
+void LedTest() { //bij opstarten alle leds even laten oplichten
+	static int t = 0;
+	static int Doorloop = 0;
+	static int Bitcount = 0;
+	static byte Temp = B00000000;
+	static int SPEED = 50;
+	t++;
+	if (t > SPEED) {
+		t = 0;
+		switch (Doorloop) {
+		case 0:
+			PORTS[3] = B00000001;
+			Temp = B00000001;
+			PORTS[2] = ~Temp;
+			Doorloop = 10;
+			Bitcount = 0;
+			break;
+		case 10:
+			PORTS[3] = PORTS[3] << 1;
+			Bitcount++;
+			if (Bitcount == 8) {
+				Bitcount = 0;
+				Temp = Temp << 1;
+
+				PORTS[3] = B00000001;
+				PORTS[2] = ~Temp;
+				if (Temp == B00000000)Doorloop = 20; //leave ledtest
+				//if (Temp == B00000000)Doorloop = 0;
+			}
+			break;
+		case 20:
+			PORTS[2] = B11111111;
+			PORTS[3] = 0;
+			bitClear(IORegist, 2); //verlaat test mode
+			break;
+		}
 	}
 }
 void LedLoop() {
@@ -671,10 +581,72 @@ void LedLoop() {
 	t++;
 	if (t == 8)t = 0;
 }
+void SetupDCC() { //Setup ports and timers
+	cli(); // geen interrupts
+		   //setup ports
+	GPIOR0 = 0; //General purpose register 0, holds Byte to be send
+	GPIOR1 = 0; //General purpose register 0, holds Byte to be send
+	GPIOR2 = 0; //General Purpose register holds Flags, booleans.
+	DDRB |= (1 << DDB1); //set PIN 9 als output Aangestuurd uit OCRA1
+	DDRB |= (1 << DDB2); //set PIN 10 als output, wordt getoggled in de ISR	
+	DDRB |= (1 << DDB4); //Pin12, PORTB4 als Output
+	PORTB |= (1 << PORTB4); //Zet PIN12 hoog. (groene led)
+	DDRD |= (1 << DDD7); //PIN7 H-Bridge enable als output
+	PORTD |= (1 << PORTD7); //Enable H-bridge
+	DDRD &= ~(1 << DDD5); //PIN 5 (PORTD4) input met pullup weerstand stellen
+	PORTD |= (1 << PORTD5); // pull up inschakelen zodat de SHORT functie optioneel wordt.
+							//setup ports IO shiftregisters
+	DDRC |= (1 << PC0); // set A0 as output = shiftclock  (pin11)
+	DDRC |= (1 << PC1); //set A1 as output = shift Latch  (pin12)
+	DDRC |= (1 << PC2); //set A2 as output =Data in (Pin14)
+	DDRB &= ~(1 << PB0); // set PORTB0 (PIN8-Arduino) as input
+	for (int i = 0; i < AantalPORTS; i++) { //clear all used ports
+		PORTS[i] = B00000000;
+	}
+	//Setup Timer 1
+	TCCR1A = 0; //initialiseer register 
+	TCCR1B = 0; //initialiseer register	
+	TCCR1B |= (1 << WGM12); //CTC mode	
+	TCCR1B |= (1 << CS11); //CS12 zet prescaler (256?) CS11 voor prescaler 8, CS10 voor geen prescaler
+	OCR1AH = B00000000;
+	OCR1AL = B01110011; //116 zet TOP waarde timer
+	TCCR1A |= (1 << COM1A0);//zet PIN 9 aan de comparator, toggle op TOPwaarde
+	TIMSK1 |= (1 << OCIE1A); //interrupt enable
+							 // Timer2, slowevents and inputs control
+	TIMSK2 |= (1 << OCIE2B); // enable de OCR2B interrupt van Timer2
+	TCNT2 = 0; //Set Timer 2 bottom waarde
+	TCCR2B |= (1 << CS22); //set prescaler 
+	TCCR2B |= (1 << CS21); //set prescaler
+						   //TCCR2B |= (1 << CS20); //set prescaler op 1024, result overflow every 16 millisec.
+	OCR2B = 100; //timerclock wordt NIET gereset dus frequency bepaald door overflow en prescaler
+	sei(); //interupts weer toestaan	
+}
+void setup() {
+	// test en hulp instellingen
+	Serial.begin(9600);
+	Tijdelijk();
+	tijd = millis(); //gebruikt voor testinput
 
-//void's general
+
+
+	bitSet(IORegist, 2); //test modus inschakelen
+	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
+	PORTB |= (1 << PORTB3); //Set high, led off
+							//PINC = 0; //clear alle inputs
+							//OLDCP = PINC; //kopieer huidige PINC	//voor ontwerp knoppen en command berekening even uitzetten
+							// TRAINSETUP();
+	SetupDCC();
+}
 void loop() {
 	DCCLOOP();
+	IOLoop();
+
+	/*
+	if (millis() - tijd > 6000) {
+		TestInput();
+		tijd = millis();
+	}
+*/
 }
 
 
