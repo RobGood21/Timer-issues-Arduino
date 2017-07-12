@@ -29,30 +29,43 @@ void Tijdelijk()
 
 	//tijdelijk even commandoos in een byte array plaatsen
 
-	MEMORIE[0] = B10000001; //waarom hier een 1 op het laatste bit????
-	MEMORIE[1] = B11111000; //adres0 activate off
+	/*
+	Hoe zit ut in elkaar
+	0=Byte 1
+	1=byte 2
+	Van Byte 1 bit7=1 bit6=0 bit5-0 = LSB van adress dus 1000 0001 = adres 1 1000 0010 = adres 2 let wel van een set van 4 dubbel adressen 
+	Van Byte 2 bit7=1 bit6-5-4 = de MSB van het adres dus de hoge waardes geinverteerd, bit3 = aan uit van het adres bit2-1 welke van de vier dubbeladressen bit0 welke van het dubbeladres 
+	Zeg maar links of rechts.
+	Onderstaand voorbeelden tijdelijke bewaar dit want morgen ben je het weer vergeten....
+	*/
 
-	MEMORIE[2] = B10000001;
-	MEMORIE[3] = B11111010; //adres1 deactivate off
 
-	MEMORIE[4] = B10000001;
-	MEMORIE[5] = B11111100; //adres2 activate off
+	MEMORIE[0] = B10000001; //adres 1 van 4 dubbeladressen dus 1-2-3-4
+	MEMORIE[1] = B11111000; //laatste bit bepaald WELKE van de twee dus recht of afbuigend
 
-	MEMORIE[6] = B10000001;
-	MEMORIE[7] = B11111110; //adres3 activate off
+	MEMORIE[2] = B10000001;//2
+	MEMORIE[3] = B11111010; 
 
-	MEMORIE[8] = B10000000; //?? adressering verder uitzoeken
-	MEMORIE[9] = B11110100; //adres4 deactivate off
+	MEMORIE[4] = B10000001;//3
+	MEMORIE[5] = B11111100; 
 
-	MEMORIE[10] = B10000101; //??
-	MEMORIE[11] = B11110101; //adres5 activate off
+	MEMORIE[6] = B10000001;//4
+	MEMORIE[7] = B11111110; 
 
-	MEMORIE[12] = B10000000; //??
-	MEMORIE[13] = B11110110; //adres6 activate off
+	//tweede
 
-	MEMORIE[14] = B10000000;
-	MEMORIE[15] = B11110111; //adres7 deactivate off
-							 //totaal even een 8 schakelaars, commandoos.
+	MEMORIE[8] = B10000010; // adres 2 van 4 dubbeladressen dus 5-6-7-8
+	MEMORIE[9] = B11111000; //
+
+	MEMORIE[10] = B10000010; //6
+	MEMORIE[11] = B11111010; 
+
+	MEMORIE[12] = B10000010;//7
+	MEMORIE[13] = B11111100; 
+
+	MEMORIE[14] = B10000010;//8
+	MEMORIE[15] = B11111110; 
+							
 
 }
 
