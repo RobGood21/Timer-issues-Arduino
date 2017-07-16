@@ -9,6 +9,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Leds", "Leds\Leds.vcxproj",
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SchakelBord", "SchakelBord\SchakelBord.vcxproj", "{C5F80730-F44F-4478-BDAE-6634EFC2CA88}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LCDScherm", "LCDScherm\LCDScherm.vcxproj", "{5C514D9A-D93E-43C6-BB66-6851980A9EA3}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LCDlib", "LCDlib\LCDlib.vcxproj", "{1E34FBBE-A271-4E3E-A041-0049DF60C7ED}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -27,6 +31,14 @@ Global
 		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Debug|x86.Build.0 = Debug|Win32
 		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|x86.ActiveCfg = Release|Win32
 		{C5F80730-F44F-4478-BDAE-6634EFC2CA88}.Release|x86.Build.0 = Release|Win32
+		{5C514D9A-D93E-43C6-BB66-6851980A9EA3}.Debug|x86.ActiveCfg = Debug|Win32
+		{5C514D9A-D93E-43C6-BB66-6851980A9EA3}.Debug|x86.Build.0 = Debug|Win32
+		{5C514D9A-D93E-43C6-BB66-6851980A9EA3}.Release|x86.ActiveCfg = Release|Win32
+		{5C514D9A-D93E-43C6-BB66-6851980A9EA3}.Release|x86.Build.0 = Release|Win32
+		{1E34FBBE-A271-4E3E-A041-0049DF60C7ED}.Debug|x86.ActiveCfg = Debug|Win32
+		{1E34FBBE-A271-4E3E-A041-0049DF60C7ED}.Debug|x86.Build.0 = Debug|Win32
+		{1E34FBBE-A271-4E3E-A041-0049DF60C7ED}.Release|x86.ActiveCfg = Release|Win32
+		{1E34FBBE-A271-4E3E-A041-0049DF60C7ED}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
