@@ -73,14 +73,22 @@ void Tijdelijk()
 byte SwitchRow[8];// = { 0, 0, 0, 0, 0, 0, 0,0 };
 byte LedRow[8];// = { 0,0,0,0,0,0,0,0 };
 byte SwitchChanged;
+byte LCDbyte = 0;
 int CColums = 0; //column in processing
-const int AantalPORTS = 4; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
+
+const int AantalPORTS = 5; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
+int CSB = 1; //CSb=count schakelbord, hoeveel aangesloten schakebord printen
+
 int Periode;
 byte PORTS[AantalPORTS]; // declareer array
-						 //0=PISO 1=SIPO voor switches 2=rijen ledmatrix 3=kolommen ledmatrix
+						 //0=PISO 1=SIPO voor switches 2=rijen ledmatrix 3=kolommen ledmatrix 4=SIPO for LCD
 byte RijRegister = B00000000; // bevat ingelezen rij switches
 byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
-//bit7=nc  bit6=nc  bit5=nc  bit4=nc  bit 3=nc bit2=OpstartTest true=aan false=uit  bit1=SSC switch status changed  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
+//bit7=nc  bit6=nc  
+//bit5=(LCD) send byte, byte staat klaar te verzenden, wordt verzonden, bij false klaar, wacht op nieuw byte
+//bit4=(LCD) =RS true is send caracter false is send command  
+//bit 3= (LCD) Send TXT true text aan het verzenden, false klaar niks verzenden
+//bit2=OpstartTest true=aan false=uit  bit1=SSC switch status changed  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
 //Declaraties DCC CS
 volatile boolean BUT1OS = true;
 volatile boolean BUT1 = false;
@@ -98,8 +106,6 @@ byte CERROR[10]; //XOR van MSB en LSB
 byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
 // functions
 ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
-						//Variabele DEBUG toont op de serial monitor de bits en bytes zoals bepaald en verzonden. Controller doet het dan
-						//niet meer vanwege timing. Debug mag straks weg. 
 	cli(); //disable interrupts
 		   // PORTB ^= (1 << PORTB2); //toggles PIN10, better do this with a hardware inverter. 
 
@@ -324,10 +330,65 @@ void DCCLOOP() {
 		}
 	}
 }
-ISR(TIMER2_COMPB_vect) {
+ISR(TIMER2_COMPB_vect) { //timer interupt timed en start de 'langzame' events. 
 PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms.
 SwitchLoop();
-	SLOWEVENTS();
+//LCDLoop();
+SLOWEVENTS();
+}
+void LCDLoop() {
+
+}
+void LCDWrite() { //writes byte to LCD called from IOloop()
+/*
+verzend het klaargezette byte (character)
+Vanuit IOloop aangeroepen telkens als alle bytes zijn ingeschoven. 
+LCDbyte bevat te verzenden byte, te versturen naar de LCD
+ioregist booleans.   
+bit5=Zend Byte als false niks doen..
+bit4=RS (command false of caracter true
+bit3=text verzenden (true) klaar voor nieuwe text(false)
+*/
+	static int pnt = 0; //pnt=point waar in het proces
+
+	if (bitRead(IORegist, 5) == true) {
+
+		switch (pnt) {
+		case 0: //begin 
+			PORTS[4] = LCDbyte >> 4; //load  msn 
+			if (bitRead(IORegist, 4) == true) bitSet(PORTS[4], 7);
+			bitSet(PORTS[4], 6);
+			pnt = 10;
+			break;
+
+		case 10: //clock in 1e nibble
+		bitClear(PORTS[4], 6);
+		pnt = 20;
+			break;
+
+		case 20:
+			PORTS[4] = LCDbyte << 4;
+			PORTS[4] = PORTS[4] >> 4; //load lsn 
+			if (bitRead(IORegist, 4) == true) bitSet(PORTS[4], 7);
+			bitSet(PORTS[4], 6);
+			pnt = 30;
+			break;
+		case 30:
+			//ends sending this byte
+			bitClear(PORTS[4], 6); 
+			bitClear(IORegist, 5); //reset flag
+			pnt =0;//reset point counter
+			break;
+		}
+	}
+}
+void LCDInit() { //initialise LCD.
+/*
+byte 4 PORTS[4] = sipo voor het LCD. 
+bit0=D4 bit1=D5 bit2=D6 Bit3=D7 bit4=free Bit5=free Bit6=E Bit7=RS
+*/
+
+
 }
 void TestInput() { //dient als een soort van DCC monitor, schakel adres 0 pe 6 seconden om.t
 
@@ -413,7 +474,7 @@ void IOLoop() { //ioloop= in-out loop
 			}
 		}
 		break;
-	case 102: // lock in and outputs
+	case 102: // shift ready, clock in.
 		bitClear(PORTC, 1); //clear register clock
 		STATUS = 100;
 		ByteCount = AantalPORTS - 1;
@@ -427,6 +488,8 @@ void IOLoop() { //ioloop= in-out loop
 		else {
 			//SwitchLoop();
 			LedLoop();
+			//hier de lcdwrite..
+			LCDWrite();
 		}
 		break;
 	default:
@@ -527,7 +590,7 @@ void SwitchLoop() {	//leest de schakelaars
 		break;
 	}
 }
-void LedTest() { //bij opstarten alle leds even laten oplichten
+void LedTest() { //opstarten, initialiseren leds en LCD
 	static int t = 0;
 	static int Doorloop = 0;
 	static int Bitcount = 0;
@@ -553,15 +616,55 @@ void LedTest() { //bij opstarten alle leds even laten oplichten
 
 				PORTS[3] = B00000001;
 				PORTS[2] = ~Temp;
-				if (Temp == B00000000)Doorloop = 20; //leave ledtest
+
+				//if (Temp == B00000000)Doorloop = 20; //leave ledtest
 				//if (Temp == B00000000)Doorloop = 0;
-			}
+				if (Temp == B00000000) {
+					Doorloop = 100; //initialiseren LCD
+				//bitcount is nu vrij gebruiken als teller voor LCD init		
+					Bitcount = 0;
+				}
+				break;
+
+		case 100: //LCD opstarten
+				  /*
+				  byte 4 PORTS[4] = sipo voor het LCD.
+				  bit0=D4 bit1=D5 bit2=D6 Bit3=D7 bit4=free Bit5=free Bit6=E Bit7=RS
+				  rs low voor commands rs high for characters
+				  */
+				  //stuur 3x achter elkaar waarde drie als nibble
+
+			PORTS[4] = B01000011; // 3 en enable hoog
+			Doorloop = 101;
 			break;
+		case 101:
+			PORTS[4] = B0000011; //enable laag, clockpuls gemaakt
+			if (Bitcount < 3) {
+				Doorloop = 100;
+			}
+			else {
+				Doorloop = 110;
+			}
+			Bitcount++;
+			break;
+
+		case 110: //nu waarde twee sturen, voor 4 bits mode
+			PORTS[4] = B01000010;
+			Doorloop = 111;
+			break;
+		case 111:
+			PORTS[4] = B00000010; //set LcD in 4 bit mode
+			//verlaat test en initialisatie
+			Doorloop = 20;
+			Bitcount = 0;
+			break;
+
 		case 20:
 			PORTS[2] = B11111111;
 			PORTS[3] = 0;
 			bitClear(IORegist, 2); //verlaat test mode
 			break;
+			}
 		}
 	}
 }
