@@ -11,7 +11,7 @@ boolean DEBUG = false; //false; //toont alle teksten als true  //straks naar eep
 byte MEMORIE[16];
 //byte RIJ = 0;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
 //int tic; //Teller loop functies in INPUTCOMMAND
-byte KOLOM = 0; //wordt gebruikt in Testinput
+//byte KOLOM = 0; //wordt gebruikt in Testinput
 void Tijdelijk()
 {
 	/* Al gekopieerd naar setup
@@ -73,24 +73,32 @@ void Tijdelijk()
 byte SwitchRow[8];// = { 0, 0, 0, 0, 0, 0, 0,0 };
 byte LedRow[8];// = { 0,0,0,0,0,0,0,0 };
 byte SwitchChanged;
-byte LCDbyte = 0;
+byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
 int CColums = 0; //column in processing
 
-const int AantalPORTS = 5; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
-int CSB = 1; //CSb=count schakelbord, hoeveel aangesloten schakebord printen
+const int AantalPORTS = 6; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
 
-unsigned int LCDDelay = 0; // 350; //delay periodes voor de LCD initieel op 350ms
-unsigned long LCDTime;
-byte PORTS[AantalPORTS]; // declareer array
-						 //0=PISO 1=SIPO voor switches 2=rijen ledmatrix 3=kolommen ledmatrix 4=SIPO for LCD
+unsigned int LCDDelay = 0; //teller voor vertraging van proces.
+byte lcdnew=0; //new state LCD switches
+byte lcdold = 0;//last state of lcd switches
+byte lcdchanged; //Holds changed switch states
+
+byte LCDbyte = 0; //Bevat actueel aan LCD te zenden byte
+String l1 = String(16); //te tonen text 1e regel
+String l2 = String(16); //2e regel
+
+byte PORTS[AantalPORTS]; // aantal shiftregisters in serie
+
 byte RijRegister = B00000000; // bevat ingelezen rij switches
 byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
 //bit7=nc  
 //bit6=(LCD) txt changed
 //bit5=(LCD) send byte, byte staat klaar te verzenden, wordt verzonden, bij false klaar, wacht op nieuw byte
-//bit4=(LCD) =RS true is send caracter false is send command  
+//bit4=(LCD) =Vraag lezen PISO(LCD) True is bezig, False is klaar
 //bit 3= (LCD) Send TXT true text aan het verzenden, false klaar niks verzenden
-//bit2=OpstartTest true=aan false=uit  bit1=SSC switch status changed  bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
+//bit2=OpstartTest true=aan false=uit  
+//bit1=SSC switch status changed  
+//bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
 
 //Declaraties DCC CS
 volatile boolean BUT1OS = true;
@@ -106,15 +114,8 @@ byte CREG[10]; //status van dit command adres
 byte CMSB[10]; //msb van command komt uit eeprom geheugen ADRESCOMMAND
 byte CLSB[10]; //LSB van command komt uit eeprom geheugen ADRESCOMMAND + 1
 byte CERROR[10]; //XOR van MSB en LSB 
-byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
-// functions
 
-//declaraties LCD
-//char l1[16] = "SchakelBord"; //l1=line 1
-//char l2[16] = "Versie 1.01";
 
-String l1 = String(16);
-String l2 = String(16);
 
 ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
 	cli(); //disable interrupts
@@ -347,8 +348,96 @@ void DCCLOOP() {
 ISR(TIMER2_COMPB_vect) { //timer interupt timed en start de 'langzame' events. 
 PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms.
 SwitchLoop();
+ProgramLoop();
 SLOWEVENTS();
-//LCDLoop();
+}
+void ProgramLoop() { //programmeer loop, aanroepen uit ISR timer 2
+	//1 2tje met ioloop via ioregist bit 4
+
+	
+
+	static int proces = 0;
+	byte swon = 0; //holds switches being switched on
+
+	switch (proces) {
+
+	case 0: //begin 
+
+		bitSet(IORegist, 4); //request state LCD switches
+		proces = 10;
+		break;
+
+	case 10: //wait for reply lcdswitches request from IOloop
+
+		if (bitRead(IORegist, 4) == false) {
+			lcdchanged = lcdnew^lcdold;
+			if (lcdchanged > 0) {
+				proces = 20;
+			}
+			else {
+				proces = 0; //no change back to begin
+			}
+		}
+		lcdold = lcdnew;
+		break;
+
+	case 20: //changed switches found
+		
+		//Serial.println("switched");
+		proces = 0;
+		/*
+		switches:
+		encoder switch = bit 7
+		encoder chA=bit 6
+		encoder CHB= bit 5
+		switch Left= bit 2
+		switch right= bit 3
+		switch ok= bit 4
+		*/
+		swon = lcdchanged & lcdnew;
+
+		for (int i = 0; i < 8; i++) {
+
+			if (bitRead(swon, i) == true) {
+				//what must be done when switch i is switched on
+				switch (i) {
+				case 0:
+				case 1:
+					
+					break;
+				case 2:
+PORTS[4] ^= (1 << 5);
+					break;
+				case 3:
+PORTS[4] ^= (1 << 6);
+					break;
+				case 4:
+
+					break;
+				case 5:
+
+					break;
+				case 6:
+
+					break;
+				case 7:
+					
+					/*
+					
+					if (bitRead(PORTS[4], 6) == true) {
+						bitClear(PORTS[4], 6);
+					}
+					else {
+						bitSet(PORTS[4], 6);
+					}
+*/
+					break;
+					
+				}
+			}
+		}
+		break;
+	}
 }
 void LCDLoop() {  //aanroep uit isr timer 2 ??? 
 	//lcddelay
@@ -443,19 +532,10 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			}
 			break;
 
-			/*	
-		case 100: // voor poort op schuifregister. 
 
-		dit wil niet werken waarschijnlijk door een timing probleem, vertragen van deze poort met hardware, 555 timer? is waarschijnlijk de oplossing
-		
-			
-			PORTS[4] ^= (1 << 6); //toggle enable
-			if (bitRead(PORTS[4], 6) == true) current = next;
-			break;
-*/
 		case 110: //clear LCD
 			bitClear(PORTS[4], 7); //reset RS send command
-			for (i = 0; i < 5; i++) {
+			for (i = 0; i < 4; i++) {
 				bitClear(PORTS[4], i);
 			}
 			current = 100;
@@ -469,7 +549,7 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			break;
 
 		case 112: //send msn 'home'
-			for (i = 0; i < 5; i++) {
+			for (i = 0; i < 4; i++) {
 				bitClear(PORTS[4], i);
 			}
 			current = 100;
@@ -518,7 +598,7 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			break;
 
 		case 211: //send msn
-			for (i = 0; i < 5; i++) { //clear data nibble
+			for (i = 0; i < 4; i++) { //clear data nibble
 				bitClear(PORTS[4], i);
 			}
 			for (i = 4; i < 8; i++) { //copy msn to datanibble
@@ -529,7 +609,7 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			break;
 
 		case 212: //send lsn
-			for (i = 0; i < 5; i++) {
+			for (i = 0; i < 4; i++) {
 				if (bitRead(LCDbyte, i) == true) {
 					bitSet(PORTS[4], i);
 				}
@@ -564,7 +644,7 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 
 		case 250: //cursor verplaatsen naar tweede regel, send adres 56 ? Hex40=64 toch?
 			bitClear(PORTS[4], 7); //rs low, send command
-			for (i = 0; i < 5; i++) {
+			for (i = 0; i < 4; i++) {
 				bitClear(PORTS[4], i);
 			}
 			bitSet(PORTS[4], 2); //msn adres
@@ -574,7 +654,7 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			break;
 
 		case 251:
-			for (i = 0; i < 5; i++) { //lsn 
+			for (i = 0; i < 4; i++) { //lsn 
 				bitClear(PORTS[4], i);
 			}
 			//bitSet(PORTS[4], 3);
@@ -587,52 +667,8 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 		count = 0;
 	}
 }
-void LCDWrite() { //niet in gebruik...
 /*
-verzend het klaargezette byte (character)
-Vanuit IOloop aangeroepen telkens als alle bytes zijn ingeschoven. 
-LCDbyte bevat te verzenden byte, te versturen naar de LCD
-ioregist booleans.   
-bit5=Zend Byte als false niks doen..
-bit4=RS (command false of caracter true
-bit3=text verzenden (true) klaar voor nieuwe text(false)
-*/
 
-	static int pnt = 0; //pnt=point waar in het proces
-	byte Temp;
-	if (bitRead(IORegist, 5) == true) {
-//Serial.println (LCDbyte);
-		switch (pnt) {
-		case 0: //begin 
-			Temp = LCDbyte;
-			PORTS[4] = Temp >> 4; //load  msn 
-			if (bitRead(IORegist, 4) == true) bitSet(PORTS[4], 7);
-			bitSet(PORTS[4], 6);
-			pnt = 10;
-			break;
-
-		case 10: //clock in 1e nibble
-		bitClear(PORTS[4], 6);
-		pnt = 20;
-			break;
-
-		case 20:
-			Temp = LCDbyte;
-			PORTS[4] = Temp << 4;
-			PORTS[4] = PORTS[4] >> 4; //load lsn, clear msn
-			if (bitRead(IORegist, 4) == true) bitSet(PORTS[4], 7);
-			bitSet(PORTS[4], 6);// ??
-			pnt = 30;
-			break;
-		case 30:
-			//ends sending this byte
-			bitClear(PORTS[4], 6); //???????????
-			bitClear(IORegist, 5); //reset flag
-			pnt =0;//reset point counter
-			break;
-		}
-	}
-}
 void TestInput() { //dient als een soort van DCC monitor, schakel adres 0 pe 6 seconden om.t
 
 	static byte r, c, ad; //teller kolom, Rij, teller commands en adres max 255 ...!
@@ -667,8 +703,8 @@ void TestInput() { //dient als een soort van DCC monitor, schakel adres 0 pe 6 s
 		}
 		c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
 	}
-
 }
+*/
 void IOLoop() { //ioloop= in-out loop
 				/*
 				zet continue de PORTS[n] in schuifregisters, toont deze.En leest de schakelaars uit.
@@ -710,12 +746,19 @@ void IOLoop() { //ioloop= in-out loop
 		SBiT++; //next bit
 		if (SBiT > 7) { //sending current byte ready
 			STATUS = 100;
-			if (bitRead(IORegist, 0) == true) { //Request for row read
-				if (ByteCount + 1 == 0) { // select PISO register, negative numbers not allowed.
-					RijRegister = PISO; //return PISO register read
+			if (bitRead(IORegist, 0) == true) { //request new state switches
+				if (ByteCount + 1 == 0) { // select PISO register, negative numbers not allowed. ????
+					RijRegister = PISO; //return PISO register
 					bitClear(IORegist, 0); //clear flag request
 				}
 			}
+
+			if (bitRead(IORegist, 4) == true) { //request new state LCD switches
+				if (ByteCount == 4) {
+					lcdnew = PISO;
+					bitClear(IORegist, 4);
+				}
+			}			
 		}
 		break;
 	case 102: // shift ready, clock in.
@@ -880,115 +923,15 @@ void LedTest() { //opstarten, initialiseren leds en LCD
 				//if (Temp == B00000000)Doorloop = 0;
 				if (Temp == B00000000) {
 					
-					Doorloop = 20; //initialiseren LCD
-					PORTS[4] = B01000000;
+					Doorloop = 20; 
+					//PORTS[4] = B01000000;
 
 				//bitcount is nu vrij gebruiken als teller voor LCD init		
 					//snelheid aanpassen
-					--SPEED = 200; 
+					SPEED = 200; 
 					Bitcount = 0;
 				}
 				break;
-				/*
-				
-
-		case 100: //LCD opstarten
-			bitSet(PORTS[4], 6);//set e high
-			Doorloop = 101;
-			break;
-		case 101:
-			bitSet(PORTS[4], 0);
-			bitSet(PORTS[4], 1);
-			Doorloop = 102;
-			break;
-
-		case 102:
-			bitClear(PORTS[4], 6); //clock 1
-			Doorloop = 103;
-			break;
-
-		case 103: 
-			bitSet(PORTS[4], 6);//set e high
-			Doorloop = 104;
-			break;
-
-		case 104:
-			bitClear(PORTS[4], 6); //clock 2
-			Doorloop = 105;
-			break;
-
-		case 105: //LCD opstarten
-			bitSet(PORTS[4], 6);//set e high
-			Doorloop = 106;
-			break;
-
-		case 106:
-			bitClear(PORTS[4], 6); //clock 3
-			Doorloop = 107;
-			break;
-
-		case 107: 
-			bitSet(PORTS[4], 6);//set e high
-			Doorloop = 110;
-			break;
-			
-		case 110: //nu waarde twee sturen, voor 4 bits mode
-			bitClear(PORTS[4], 0);
-			Doorloop = 111;
-			break;
-
-		case 111: //clock puls 
-			bitClear(PORTS[4], 6); //clock
-			Doorloop = 112;	
-			break;
-
-		case 112:
-			bitSet(PORTS[4], 6);
-			Doorloop = 120; //stop
-			break;
-
-//nu zou die in 4 bit mode moeten staan
-
-		case 120:
-//
-			PORTS[4] = B01000000;
-
-			Doorloop = 121;
-			break;
-
-		case 121:
-			bitClear(PORTS[4], 6);
-			Doorloop = 122;
-			break;
-
-		case 122:
-			bitSet(PORTS[4], 6);
-			Doorloop = 123;
-			break;
-
-
-		case 123:
-			bitSet(PORTS[4], 0);
-			bitSet(PORTS[4], 1);
-			bitSet(PORTS[4], 2);
-			bitSet(PORTS[4], 3);
-			Doorloop = 124;
-			break;
-			
-		case 124:
-			bitClear(PORTS[4], 6);
-			Doorloop = 125;
-
-			break;
-
-		case 125:
-			bitSet(PORTS[4], 6);
-			Doorloop = 200;
-			break;
-
-		case 200:
-			break;
-			*/
 
 		case 20:
 			PORTS[2] = B11111111;
@@ -1090,7 +1033,7 @@ void setup() {
 							// TRAINSETUP();
 	
 	PORTC |= (1 << PORTC3);//enable LCD hoog
-	//bitSet(PORTS[4], 6); //LCD enable hoog via shiftregister
+	//bitClear(PORTS[4], 6); //LCD enable hoog via shiftregister
 	SetupDCC();
 }
 void loop() {
