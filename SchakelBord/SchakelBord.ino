@@ -76,14 +76,26 @@ byte SwitchChanged;
 byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
 int CColums = 0; //column in processing
 
+byte SW1[255]; //byte1 switches (adres)
+byte SW2[255]; //byte 2 variables
+
 const int AantalPORTS = 6; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
 
 unsigned int LCDDelay = 0; //teller voor vertraging van proces.
 byte lcdnew=0; //new state LCD switches
 byte lcdold = 0;//last state of lcd switches
 byte lcdchanged; //Holds changed switch states
+byte lcdon = 0; //holds actice switch
+
+
+int programmode = 0; //programma mode 0=normaal 1=adres 2=accessory type (single, dual) 3= switch type 4=CV
+int programSw = 0; //Welke switch wordt geprogrammeerd
+
 
 byte LCDbyte = 0; //Bevat actueel aan LCD te zenden byte
+int lcdrefresh = 0; //Hoe moet de lcd worden aangepast?
+int lcdadres = 0; //adres waar lcd naar toe moet
+
 String l1 = String(16); //te tonen text 1e regel
 String l2 = String(16); //2e regel
 
@@ -91,7 +103,7 @@ byte PORTS[AantalPORTS]; // aantal shiftregisters in serie
 
 byte RijRegister = B00000000; // bevat ingelezen rij switches
 byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
-//bit7=nc  
+//bit7=nc 
 //bit6=(LCD) txt changed
 //bit5=(LCD) send byte, byte staat klaar te verzenden, wordt verzonden, bij false klaar, wacht op nieuw byte
 //bit4=(LCD) =Vraag lezen PISO(LCD) True is bezig, False is klaar
@@ -99,6 +111,12 @@ byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
 //bit2=OpstartTest true=aan false=uit  
 //bit1=SSC switch status changed  
 //bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
+
+byte PrgRegist = 0; //flags tbv programmeren
+//bit 0= encoder B channel
+//bit 1= true =value mode,  false= parameter mode
+
+
 
 //Declaraties DCC CS
 volatile boolean BUT1OS = true;
@@ -114,8 +132,6 @@ byte CREG[10]; //status van dit command adres
 byte CMSB[10]; //msb van command komt uit eeprom geheugen ADRESCOMMAND
 byte CLSB[10]; //LSB van command komt uit eeprom geheugen ADRESCOMMAND + 1
 byte CERROR[10]; //XOR van MSB en LSB 
-
-
 
 ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
 	cli(); //disable interrupts
@@ -348,27 +364,131 @@ void DCCLOOP() {
 ISR(TIMER2_COMPB_vect) { //timer interupt timed en start de 'langzame' events. 
 PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms.
 SwitchLoop();
-ProgramLoop();
+lcdswitch();
 SLOWEVENTS();
 }
-void ProgramLoop() { //programmeer loop, aanroepen uit ISR timer 2
-	//1 2tje met ioloop via ioregist bit 4
+void lcdtxt(int pm) { //schrijft texten naar lcd
+	switch (pm){
+	case 10:
+			l2 = " DCC adres";		
+			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
+			bitSet(IORegist, 6);
+		break;
 
-	
+	case 11: //dcc adres value
+		l1 = "(";
+		l1.concat(programSw);
+		l1.concat(")-DCC adres");
+		l2 = " hier het adres";
+		lcdrefresh=2;
+		break;
 
+	case 20:
+		l2 = " Apart of dubbel";
+		lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
+		
+
+			break;
+		case 30:
+			l2 = " Schakelaar type";
+			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
+			//bitSet(IORegist, 6);
+			break;
+		case 40:
+			l2 = " puls, continue";
+			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
+			//bitSet(IORegist, 6);
+			break;
+
+		case 50:
+			l2 = " CV programming";
+			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
+			//bitSet(IORegist, 6);
+			break;
+	}
+			
+}
+void ProgramLoop(int s) { 
+	/*
+	Twee switch loop lopen hier door elkaar:
+	S=welke schakelaar of encoder
+	Programmode= waar in het programeerproces
+Iedere swich heeft twee bytes opslag in EEPROM
+en iederen switch heeft opslag in intern geheugen
+by opstarten EEPROM geheugen in interngeheugen plaatsen
+bij programmeren, intern geheugen EN EEprom aanpassen.
+
+byte 1 = [programsw] byte 2= [programsw] + 255
+
+byte 1= 8 bits adres bit7=msb bit0=lsb bit9 van het adres (bit 6 in byte2 van het dcc signaal wordt NIET opgeslagen) dus
+max dcc adres = 255 (1024 wissel adressen, 2048 single adressen)
+
+byte 2= 
+bit7=dcc, continue(true) of impuls (false)
+bit6=switch, continue(true) of impuls(false)
+bit5=single (true) of dual(false)
+bit4=switch, Rechtdoor(false) of Afbuigend(true)
+bit3=On (true) of off(false)
+bit2=msb pair
+bit1=lsb pair
+bit0= dcc, rechtdoor (false) of afbuigend(true)
+	*/
+
+int temp = 0;
+	switch (s) {
+
+	case 7: //ok of encoderswitch
+
+		switch (programmode) {
+		case 0: //normal 
+			//switch to program mode 10
+			programmode = 10; //dccadres programmeren. 
+			bitClear(PrgRegist, 1); //parameter mode
+			//lcdtxt(programmode);
+			break;
+
+		case 10: // prgram DCC adres
+			bitSet(PrgRegist, 1); //valuemode
+			programmode = 11;
+
+		break;
+
+		case 20:
+			break;
+
+		}
+
+		break;
+
+	case 6: //encoder channel A wordt hoog
+		if (bitRead(PrgRegist, 1) == false) { //parameter mode
+			if (bitRead(PrgRegist, 0) == true) { //increment, channel B==high
+				programmode=programmode + 10;
+				if (programmode > 59)programmode = 10;
+			}
+			else {//decrement, channel B low
+			programmode = programmode - 10;
+			if (programmode < 10) programmode = 50;
+			}
+			lcdtxt(programmode);
+		}
+		else { //value mode
+
+		}
+		break;
+	}
+	lcdtxt(programmode);
+	bitSet(IORegist, 6);
+}
+void lcdswitch() { //reads LCD switches and encoder called from ISR timer 2
 	static int proces = 0;
 	byte swon = 0; //holds switches being switched on
-
 	switch (proces) {
-
 	case 0: //begin 
-
 		bitSet(IORegist, 4); //request state LCD switches
 		proces = 10;
 		break;
-
 	case 10: //wait for reply lcdswitches request from IOloop
-
 		if (bitRead(IORegist, 4) == false) {
 			lcdchanged = lcdnew^lcdold;
 			if (lcdchanged > 0) {
@@ -382,8 +502,7 @@ void ProgramLoop() { //programmeer loop, aanroepen uit ISR timer 2
 		break;
 
 	case 20: //changed switches found
-		
-		//Serial.println("switched");
+		//prgregist bit 0 = state encoder L bit1 = state encoder R
 		proces = 0;
 		/*
 		switches:
@@ -394,54 +513,27 @@ void ProgramLoop() { //programmeer loop, aanroepen uit ISR timer 2
 		switch right= bit 3
 		switch ok= bit 4
 		*/
-		swon = lcdchanged & lcdnew;
 
-		for (int i = 0; i < 8; i++) {
-
-			if (bitRead(swon, i) == true) {
-				//what must be done when switch i is switched on
-				switch (i) {
-				case 0:
-				case 1:
-					
-					break;
-				case 2:
-PORTS[4] ^= (1 << 5);
-					break;
-				case 3:
-PORTS[4] ^= (1 << 6);
-					break;
-				case 4:
-
-					break;
-				case 5:
-
-					break;
-				case 6:
-
-					break;
-				case 7:
-					
-					/*
-					
-					if (bitRead(PORTS[4], 6) == true) {
-						bitClear(PORTS[4], 6);
-					}
-					else {
-						bitSet(PORTS[4], 6);
-					}
-*/
-					break;
-					
-				}
+		//stand van encoder channel B overnemen in prgregist,0
+		if (bitRead(lcdchanged, 5) == true) {
+			if (bitRead(lcdnew, 5) == true) {
+				bitSet(PrgRegist, 0);
+			}
+			else {
+				bitClear(PrgRegist, 0);
 			}
 		}
-		break;
+
+		swon = lcdchanged & lcdnew;
+			if (bitRead(swon, 7) == true) ProgramLoop(7); //is swich 7 aangezet 
+			if ((bitRead(swon, 6) == true)&&(programmode > 0)) ProgramLoop(6); //encoder channel A wordt hoog
+			break;
 	}
 }
 void LCDLoop() {  //aanroep uit isr timer 2 ??? 
 	//lcddelay
 	//current=100 = clockpuls
+	static int sc = 0;
 	static int count = 0; 
 	static int current = 0; //current fase van proces
 	static int next =0; //volgende fase
@@ -518,6 +610,7 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 		case 10: //end of init
 			current = 200; //start txt mode
 			LCDDelay = 100; //check for new txt once 10ms
+			lcdrefresh = 0;
 			break;
 			
 			
@@ -563,6 +656,7 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			break;
 
 		case 200: //start txt mode
+			// na initialisatie altijd 200, wacht op veranderde flag
 			//is er een veranderde txt?
 			//byte klaar?
 			//ioregist, bit 3= (LCD) Send TXT true text aan het verzenden, false klaar niks verzenden
@@ -570,16 +664,30 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			//text in l1 en l2 
 
 			if (bitRead(IORegist, 3) == true) { //nieuwe text, bij false gebeurt er gewoon niks, ieder lcddelay wordt hierop getest
-				LCDDelay = 0; //raise speed
-				cc = 0;
-				lc = 0;
-				//adressen? clear? home?
-					//current = 210;
+			LCDDelay = 0; //raise speed
+			cc = 0;
+			lc = 0;
+			switch (lcdrefresh) {
+			case 0: //geheel vervangen		
+				current = 110; //text volledig aanpassen
+				break;
+
+			case 1: //Alleen l2 vervangen, cursor begin regel 2
+				lc = 1;	
+				current = 250; //send new line
+				sc = 1; // setcursor na dat txt is geplaatst
+			break; 
+			case 2://geheel vervangen, cursor begin regel 2
 				current = 110;
+				sc = 1;
+				break;
+
+				}		
 			}
-			break;
+			break; //for case 200
 
 		case 210: //begin txt send
+
 			bitSet(PORTS[4], 7); //set rs (character send)	
 
 			switch (lc) {
@@ -593,8 +701,9 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 				break;
 			}
 
-			if (LCDbyte == 0)LCDbyte = 32;
+			if (LCDbyte == 0)LCDbyte = 32;	
 			current = 211;
+
 			break;
 
 		case 211: //send msn
@@ -633,7 +742,15 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 					bitClear(IORegist, 3); //txt klaar
 					lc = 0;
 					LCDDelay = 100;
-					current = 200;
+					
+					if (sc == 1) {
+						current = 250;
+						sc = 2;
+					}
+					else {
+						current = 200;
+					}				
+
 				}
 				else { //line 2 verzenden
 					current = 250;
@@ -659,7 +776,15 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 			}
 			//bitSet(PORTS[4], 3);
 			current = 100;
-			next = 210;
+
+			if (sc == 2) {
+				next = 200;
+				sc = 0;
+			}
+			else {
+				next = 210;	
+			}
+					
 			break;
 
 			//} 		
@@ -805,9 +930,13 @@ int sw = 0;
 
 				
 				//schakelaar bepaald en stand txt weergeven op LCD
+				//tevens RESET van de programmeer stand, altijd
+				programmode = 0;
 				sw = (i*8) + (CColums + 1);
+				programSw = sw; //last choosen switch for program mode
 				l1 = "Knop: ";
 				l1.concat(sw);
+
 				if (bitRead(LedRow[CColums],i) == true) {
 					l2 = "Aan";
 				}
@@ -815,6 +944,7 @@ int sw = 0;
 					l2 = "Uit";
 				}
 
+				lcdrefresh = 0;
 				bitSet(IORegist, 6); //vragen om nieuwe text (vertraagd via loop())
 
 
