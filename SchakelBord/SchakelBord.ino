@@ -6,6 +6,11 @@
 */
 
 //tijdelijke en hulp declaraties en functies
+#include <EEPROM.h>
+/*
+Een leeg, nog niet geprogrammeerd byte in EEPROM is altijd een Hex FF (B1111 1111) 
+een nog niet gedefinieerd dcc kanaal = dus altijd adres 1024 (256-4)
+*/
 unsigned long tijd = 0;
 boolean DEBUG = false; //false; //toont alle teksten als true  //straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
 byte MEMORIE[16];
@@ -39,31 +44,31 @@ void Tijdelijk()
 	Onderstaand voorbeelden tijdelijke bewaar dit want morgen ben je het weer vergeten....
 	*/
 
+	//adres 0 bestaat dus niet!!! getest met ecos op 12aug2017
+	MEMORIE[0] = B10000001; //adres 1 van 4 dubbeladressen dus 1-2-3-4 adres 0 komt dus niet voor...
+	MEMORIE[1] = B11111000; //laatste bit bepaald WELKE van de twee dus recht of afbuigend =1-1
 
-	MEMORIE[0] = B10000001; //adres 1 van 4 dubbeladressen dus 1-2-3-4
-	MEMORIE[1] = B11111000; //laatste bit bepaald WELKE van de twee dus recht of afbuigend
-
-	MEMORIE[2] = B10000001;//2
+	MEMORIE[2] = B10000001;//2 =1-2
 	MEMORIE[3] = B11111010; 
 
-	MEMORIE[4] = B10000001;//3
+	MEMORIE[4] = B10000001;//3 = 1-3
 	MEMORIE[5] = B11111100; 
 
-	MEMORIE[6] = B10000001;//4
+	MEMORIE[6] = B10000001;//4 =1-4
 	MEMORIE[7] = B11111110; 
 
 	//tweede
 
-	MEMORIE[8] = B10000010; // adres 2 van 4 dubbeladressen dus 5-6-7-8
+	MEMORIE[8] = B10000011; // adres 3 van 4 dubbeladressen dus 5-6-7-8
 	MEMORIE[9] = B11111000; //
 
-	MEMORIE[10] = B10000010; //6
+	MEMORIE[10] = B10000011; //6
 	MEMORIE[11] = B11111010; 
 
-	MEMORIE[12] = B10000010;//7
+	MEMORIE[12] = B10000011;//7
 	MEMORIE[13] = B11111100; 
 
-	MEMORIE[14] = B10000010;//8
+	MEMORIE[14] = B10000011;//8
 	MEMORIE[15] = B11111110; 
 							
 
@@ -76,8 +81,18 @@ byte SwitchChanged;
 byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
 int CColums = 0; //column in processing
 
-byte SW1[255]; //byte1 switches (adres)
+byte SW1[255]; //byte1 switches (8 bits adres)
 byte SW2[255]; //byte 2 variables
+/*
+bit7 not used
+bit6 
+bit5 switch continu of puls
+bit4 dcc continue of puls
+bit3 both=false single=true (standaard 0)
+bit2 welke decoder van de 4 bit 1
+bit1 welke decoder van de 4 bit 0
+bit0= welke van het paar. True=afslaan, false is rechtdoor
+*/
 
 const int AantalPORTS = 6; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
 
@@ -98,6 +113,10 @@ int lcdadres = 0; //adres waar lcd naar toe moet
 
 String l1 = String(16); //te tonen text 1e regel
 String l2 = String(16); //2e regel
+String l1mem = String(16); // geheugenplaats voor txt.
+String l2mem = String(16);
+unsigned int PMmem; //onthouden in welke programmode
+int poortsw = 0; //dual or single mode of dcc adres
 
 byte PORTS[AantalPORTS]; // aantal shiftregisters in serie
 
@@ -115,8 +134,8 @@ byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
 byte PrgRegist = 0; //flags tbv programmeren
 //bit 0= encoder B channel
 //bit 1= true =value mode,  false= parameter mode
-
-
+byte groep = 0; //bevat laatste groep adres
+byte dc = 0;//bevat laatste decoder adres (wie van de vier)
 
 //Declaraties DCC CS
 volatile boolean BUT1OS = true;
@@ -125,6 +144,7 @@ volatile unsigned int SCOUNTER = 0;
 unsigned int CS = 0; //Commandstatus beter unsigned integer (aanpassen)
 int i; //teller voor loop functies in train, noet signed zijn...wordt negatief,  hier nog naar kijken is onhandig.
 int nc;
+
 int BC = 0; //=ByteCount Aantal verzonden bytes
 int BT = 3; //ByteTotal =aantal te verzenden bytes, //xxx declaraties voor debugging en testen
 byte PREG = 0; // Public register voor 8 booleans
@@ -133,6 +153,14 @@ byte CMSB[10]; //msb van command komt uit eeprom geheugen ADRESCOMMAND
 byte CLSB[10]; //LSB van command komt uit eeprom geheugen ADRESCOMMAND + 1
 byte CERROR[10]; //XOR van MSB en LSB 
 
+void LoadData(){ //gets data from EEPROM during power-up
+	//laad SW1 en SW2 terug
+	for (i = 0; i < 256; i++) {
+		SW1[i] = EEPROM.read(i);
+		SW2[i] = EEPROM.read(i + 256);
+	}
+
+}
 ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
 	cli(); //disable interrupts
 		   // PORTB ^= (1 << PORTB2); //toggles PIN10, better do this with a hardware inverter. 
@@ -367,48 +395,92 @@ SwitchLoop();
 lcdswitch();
 SLOWEVENTS();
 }
+
 void lcdtxt(int pm) { //schrijft texten naar lcd
 	switch (pm){
 	case 10:
+		
+		l1mem = l1; //eerste regel vasthouden
 			l2 = " DCC adres";		
-			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
-			bitSet(IORegist, 6);
+			l2mem = l2;
+			lcdrefresh = 1;
+			//bitSet(IORegist, 6);
 		break;
 
 	case 11: //dcc adres value
 		l1 = "(";
 		l1.concat(programSw);
 		l1.concat(")-DCC adres");
-		l2 = " hier het adres";
-		lcdrefresh=2;
+
+		lcdrefresh=2;  //volledig vervangen
+		programmode = 12;
+		break;
+
+	case 12: //value dcc veranderd
+		lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
+		break;
+
+	case 15:
+		bitClear(PrgRegist, 1);
+		l1 = l1mem;
+		l2 = l2mem;
+		programmode = PMmem;
+		lcdrefresh = 2;
 		break;
 
 	case 20:
-		l2 = " Apart of dubbel";
-		lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
+		PMmem = programmode;
+		l2 = " Aansturing";
+		lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen		
+			break;
+	case 21:
+		l1mem = l1;
+		l2mem = l2;
 		
 
-			break;
-		case 30:
+		l1 = "(";
+		l1.concat(programSw);
+		l1.concat(")-Aansturing");
+		if (bitRead(SW2[programSw], 5) == false) { //single mode
+			if (bitRead(SW2[programSw], 4) == true) {
+				poortsw = 2;
+			}
+			else {
+				poortsw = 3;
+			}
+		}
+		else { //dual mode
+			poortsw=1;
+		}
+		txtpoort();
+		lcdrefresh = 2;  //volledig vervangen
+		programmode = 22;
+		break;
+
+	case 22:
+		lcdrefresh = 1;
+		break;
+	
+	case 30:
 			l2 = " Schakelaar type";
 			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
 			//bitSet(IORegist, 6);
 			break;
-		case 40:
+	case 40:
 			l2 = " puls, continue";
 			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
 			//bitSet(IORegist, 6);
 			break;
-
-		case 50:
+	
+	case 50:
 			l2 = " CV programming";
 			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
 			//bitSet(IORegist, 6);
 			break;
 	}
-			
+	bitSet(IORegist, 6);
 }
-void ProgramLoop(int s) { 
+void ProgramLoop(int s) { //called by pushed lcd switch
 	/*
 	Twee switch loop lopen hier door elkaar:
 	S=welke schakelaar of encoder
@@ -418,67 +490,221 @@ en iederen switch heeft opslag in intern geheugen
 by opstarten EEPROM geheugen in interngeheugen plaatsen
 bij programmeren, intern geheugen EN EEprom aanpassen.
 
-byte 1 = [programsw] byte 2= [programsw] + 255
+SW1   byte 1 = [programsw] SW2  byte 2= [programsw] + 255
 
 byte 1= 8 bits adres bit7=msb bit0=lsb bit9 van het adres (bit 6 in byte2 van het dcc signaal wordt NIET opgeslagen) dus
 max dcc adres = 255 (1024 wissel adressen, 2048 single adressen)
 
+Als EEPROM adres nog NIET is geprogrammeerd bij bv. nieuwe arduino dan is waarde 0xFF
 byte 2= 
 bit7=dcc, continue(true) of impuls (false)
 bit6=switch, continue(true) of impuls(false)
-bit5=single (true) of dual(false)
+bit5=single (false) of dual(true)
 bit4=switch, Rechtdoor(false) of Afbuigend(true)
 bit3=On (true) of off(false)
 bit2=msb pair
 bit1=lsb pair
 bit0= dcc, rechtdoor (false) of afbuigend(true)
 	*/
-
 int temp = 0;
+static int adrs; //dcc adres actief switch
+//Serial.println(s);
+
 	switch (s) {
 
-	case 7: //ok of encoderswitch
+//**********Encoder switch*************
+	case 7: //ok of encoderswitch	
 
 		switch (programmode) {
 		case 0: //normal 
 			//switch to program mode 10
 			programmode = 10; //dccadres programmeren. 
-			bitClear(PrgRegist, 1); //parameter mode
-			//lcdtxt(programmode);
+			PMmem = programmode;
+			bitClear(PrgRegist, 1); //parameter mode //lcdtxt(programmode);		
 			break;
 
 		case 10: // prgram DCC adres
-			bitSet(PrgRegist, 1); //valuemode
-			programmode = 11;
-
+			bitSet(PrgRegist, 1); //valuemode			
+			adrs=prgadres(); //het dcc adres opzoeken van gekozen switch
+			adreslcd(adrs); //plaats adres code in l2
+			programmode = 11;	
 		break;
 
-		case 20:
+		case 12: //if s7 is pushed again leave value mode, save adress
+			
+			//groep en dc bevatten adres
+			programmode = 15; //toon txt= lcdtxt
+			//save
+			SW1[programSw] = groep;
+
+			bitClear(SW2[programSw],1); 
+			bitClear(SW2[programSw],2);
+
+			switch (dc) {
+			case 1:
+				bitSet(SW2[programSw], 1);
+				break;
+			case 2:
+				bitSet(SW2[programSw], 2);
+				break;
+			case 3:
+				bitSet(SW2[programSw], 1);
+				bitSet(SW2[programSw], 2);
+				break;
+			default:				
+				break;
+			}
+			//save to Eprom 
+			EEPROM.write(programSw, SW1[programSw]);
+			EEPROM.write(programSw + 256, SW2[programSw]);			
 			break;
 
+		case 20:
+			bitSet(PrgRegist, 1); //valuemode	
+			programmode = 21;
+			break;
+
+		case 22: //leave programmode
+		programmode = 15;
+		//save poortsw
+			break;
 		}
 
-		break;
+		break; //for case 7 switch
 
-	case 6: //encoder channel A wordt hoog
+
+//***************encoder increment decrement************
+	case 6: // encoder channel A wordt hoog
+
 		if (bitRead(PrgRegist, 1) == false) { //parameter mode
+			PORTS[4] ^= (1 << 6); // toggle led
+
 			if (bitRead(PrgRegist, 0) == true) { //increment, channel B==high
 				programmode=programmode + 10;
 				if (programmode > 59)programmode = 10;
 			}
-			else {//decrement, channel B low
+			else {//decrement, channel B low				
 			programmode = programmode - 10;
 			if (programmode < 10) programmode = 50;
 			}
-			lcdtxt(programmode);
+			//lcdtxt(programmode);
 		}
 		else { //value mode
+			//programmode 12
+			PORTS[4] ^= (1 << 5);
+			
+			switch (programmode) {
+			case 12: //dcc adres
+				if (bitRead(PrgRegist, 0) == true) { //inc
+					adrs++;
+					if (adrs > 1020)adrs = 1;
+				}
+				else { //dec
+					adrs--;
+					if (adrs < 1)adrs = 1020;
+				}
+				adreslcd(adrs); //plaats adres in l2		
+				break;
 
+			case 22: //aansturing 
+				if (bitRead(PrgRegist, 0) == true) { //inc
+					poortsw ++;
+					if (poortsw > 3)poortsw = 0;
+				}
+				else { //dec
+					poortsw--;
+					if (poortsw < 0) poortsw = 3;				}
+				txtpoort();
+				break;
+			}			
+			//lcdrefresh = 100; //niks met txt doen
 		}
 		break;
 	}
 	lcdtxt(programmode);
-	bitSet(IORegist, 6);
+}
+int prgadres() { //haal adres uit geheugen
+	int r;	
+	r = SW1[programSw]*4+1; //adres 0 bestaat niet in DCC is niet geprogrammeerd
+	if (bitRead(SW2[programSw], 1) == true) r = r + 1;
+	if (bitRead(SW2[programSw], 2) == true) r = r + 2;
+	return r;	
+}
+byte DCCmsb() {
+	//bepaal msb van dcc command
+	//opbouw bit 0 tot bit 5 van adres
+	byte msb = SW1[programSw];
+	bitSet(msb, 7);
+	bitClear(msb, 6);
+	msb++; //DCC adres 0 bestaat niet, dus Hex00 wordt Hex01 
+	return msb;
+}
+byte DCClsb() {
+
+	//bepaal lsb van dcc command
+	/*
+	bit7 not used
+	bit6 not used
+	bit5 switch continue of puls
+	bit4 dcc continue of puls
+	bit3 both=false single=true (standaard 0)
+	bit2 welke decoder van de 4 bit 1
+	bit1 welke decoder van de 4 bit 0
+	bit0= welke van het paar. True=afslaan, false is rechtdoor
+	*/
+
+	byte lsb = 192; //set bit7,6 adressbit 9 not used. 
+		if (bitRead(SW1[programSw], 7) == false) bitSet(lsb, 5); //adresbit 8 (inverted, one complement)
+		if (bitRead(SW1[programSw], 6) == false) bitSet(lsb, 4); //adresbit 7
+		bitSet(lsb, 3); //TIJDELIJK in single mode moet dit worden gebruikt voorlopig ff constant true		
+		if (bitRead(SW2[programSw],2) == true) bitSet(lsb, 2);
+		if (bitRead(SW2[programSw], 1)  == true) bitSet(lsb, 1);
+
+		//bit 0 TIJDELIJK ff false stellen
+
+	return lsb;
+}
+void txtpoort() { //txt voor l2 aansturing 
+	switch (poortsw) {
+	case 1:
+		l2 = " Wissel";
+		break;
+	case 2:
+		l2 = " Poort 1";
+		break;
+	case 3:
+		l2 = " Poort 2";
+		break;
+	}
+}
+void adreslcd(int a) { //plaats adres in l2
+	 int c = 512;
+	 int adres;
+	adres = a; // -1;
+	int mainadres = 0;
+	for (i = 0; i < 8; i++) { 
+
+		if (adres - c > 0) {
+			adres = adres - c;
+			mainadres = mainadres + (c / 4);
+		}
+		c = c / 2;
+	}
+	dc = adres; //geeft decoder in groep, rest van bovenstaande berekening
+	//main adres geeft de groep
+	if (mainadres == 255) {
+	l2 = "Niet bepaald";
+	}
+	else {	
+	l2 = a;
+	l2.concat(" (");
+	l2.concat(mainadres+1);
+	l2.concat("-");
+	l2.concat(dc); //dc bevat rest
+	l2.concat(")");
+	groep = mainadres;
+	dc = dc-1;
+ }
 }
 void lcdswitch() { //reads LCD switches and encoder called from ISR timer 2
 	static int proces = 0;
@@ -677,11 +903,15 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 				current = 250; //send new line
 				sc = 1; // setcursor na dat txt is geplaatst
 			break; 
+
 			case 2://geheel vervangen, cursor begin regel 2
 				current = 110;
 				sc = 1;
 				break;
 
+			case 100: //Niks doen, txt niet aanpassen
+				bitClear(IORegist, 3);
+				break;
 				}		
 			}
 			break; //for case 200
@@ -910,7 +1140,6 @@ void IOLoop() { //ioloop= in-out loop
 	}
 }
 void Switched(byte k, byte r) {//handles switches
-
 int c = 0;
 int adress = 0;
 int sw = 0;
@@ -926,24 +1155,23 @@ int sw = 0;
 	for (int i = 0; i < 8; i++) {
 		if (bitRead(SwitchChanged, i) == true) {
 			if (bitRead(r, i) == true) { //found switch has become true
-				LedRow[CColums] ^= 1 << i; //toggle indicatorled		
-
-				
+				LedRow[CColums] ^= 1 << i; //toggle indicatorled					
 				//schakelaar bepaald en stand txt weergeven op LCD
 				//tevens RESET van de programmeer stand, altijd
 				programmode = 0;
+				PMmem = 0;
+
 				sw = (i*8) + (CColums + 1);
+				//*******************************
 				programSw = sw; //last choosen switch for program mode
 				l1 = "Knop: ";
 				l1.concat(sw);
-
 				if (bitRead(LedRow[CColums],i) == true) {
 					l2 = "Aan";
 				}
 				else {
 					l2 = "Uit";
 				}
-
 				lcdrefresh = 0;
 				bitSet(IORegist, 6); //vragen om nieuwe text (vertraagd via loop())
 
@@ -955,18 +1183,22 @@ int sw = 0;
 						//bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
 						bitSet(CREG[c], 7); //claim dit command geheugen
 						bitSet(CREG[c], 2); //zet uitvoer counter op 4.
-						adress = ((i * 8) + CColums) * 2;//adres decimaal bepalen kolom x 8 + gevonden bit in RIJ
-						//MERK OP =1 lager dan de aanduiding op de LCD
 
-						CMSB[c] = MEMORIE[adress]; //haal MSB uit geheugen straks EEPROM
-						CLSB[c] = MEMORIE[adress + 1];  //Haal LSB							
+						//oude tijdelijke situatie
+						//adress = ((i * 8) + CColums) * 2;//adres decimaal bepalen kolom x 8 + gevonden bit in RIJ
+						//CMSB[c] = MEMORIE[adress]; //haal MSB uit geheugen straks EEPROM
+						//CLSB[c] = MEMORIE[adress + 1];  //Haal LSB		
+
+						//nieuwe situ haalt dcc instelling uit geheugen
+						
+						CMSB[c] = DCCmsb();
+						CLSB[c] = DCClsb();
+
 						SwitchState[CColums] ^= (1 << i); //zet on/off invert, voor deze schakelaar
+
 						if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 0); //set r/l adres +1 
 
-						//Serial.println(CMSB[c]);//("dit mag maar 1 keer");
-						//Serial.println(CLSB[c]);
-
-						CERROR[c] = CMSB[c] ^ CLSB[c];
+						CERROR[c] = CMSB[c] ^ CLSB[c]; //xor bytes
 						c = 10;
 					}
 					c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
@@ -983,7 +1215,6 @@ int sw = 0;
 			*/			
 		}
 	}
-
 }
 void SwitchLoop() {	//leest de schakelaars
 	static int fase = 0;
@@ -1150,6 +1381,7 @@ void setup() {
 	// test en hulp instellingen
 	Serial.begin(9600);
 	Tijdelijk();
+	LoadData();
 
 	l1 = "SchakelBord";
 	l2 = "Versie 1.01";
