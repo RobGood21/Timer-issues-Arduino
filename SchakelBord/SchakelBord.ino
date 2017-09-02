@@ -88,7 +88,7 @@ byte SW2[255]; //byte 2 variables
 bit7 not used
 bit6 dcc continue of puls
 bit5 switch continu of puls
-bit4 Coupled, zijn de poorten gekoppeld true = ja 
+bit4 = wissel of apart
 bit3 both=false single=true (standaard 0)
 bit2 welke decoder van de 4 bit 1
 bit1 welke decoder van de 4 bit 0
@@ -470,7 +470,6 @@ void lcdtxt(int pm) { //schrijft texten naar lcd
 		//bit4 Coupled, zijn de poorten gekoppeld true = ja
 		//	bit3 both = false single = true (standaard 0)
 		//bit0 is welke poort
-
 		if (bitRead(SW2[programSw], 3) == false) { //single mode
 			if (bitRead(SW2[programSw], 4) == false) { //not coupled
 
@@ -644,13 +643,28 @@ static int adrs; //dcc adres actief switch
 			EEPROM.write(programSw + 256, SW2[programSw]);			
 			break;
 
-		case 20:
+		case 20:  //mode aansturing
 			txtmem(0);
 			bitSet(PrgRegist, 1); //valuemode	
 			programmode = 21;
 			break;
 
 		case 22: //leave programmode
+				 /*
+				 SW2
+				 bit7 not used
+				 bit6 dcc continue of puls
+				 bit5 switch continu of puls
+				 bit4 Coupled, zijn de poorten gekoppeld true = ja
+				 bit3 both=false single=true (standaard 0)
+				 bit2 welke decoder van de 4 bit 1
+				 bit1 welke decoder van de 4 bit 0
+				 bit0= welke van het paar. True=afslaan, false is rechtdoor
+				 
+				 EEn nog niet geprogrammeerd eeprom adrs is hex FF
+
+				 */
+
 		programmode = 15;
 		//save poortsw
 		switch (poortsw) {
@@ -668,20 +682,20 @@ static int adrs; //dcc adres actief switch
 				bitSet(SW2[programSw], 4);
 				bitClear(SW2[programSw], 0);
 				break;
-			case 4: //single <
+			case 4: //apart  <
 				bitClear(SW2[programSw], 3);
 				bitClear(SW2[programSw], 4);
 				bitSet(SW2[programSw], 0);
 				break;
-			case 5: //single >
+			case 5: //apart >
 				bitClear(SW2[programSw], 3);
 				bitClear(SW2[programSw], 4);
 				bitClear(SW2[programSw], 0);
 				break;
 		}
+
 		EEPROM.write(programSw + 256, SW2[programSw]);
-			break;//for case 22
-		
+			break;//for case 22		
 
 	case 50: //switch 7 programmode 50
 		//Serial.println("nu dus naar cv program");
@@ -830,15 +844,14 @@ byte DCClsb() {
 		if (bitRead(SW1[programSw], 6) == false) bitSet(lsb, 4); //adresbit 7
 		
 		if (bitRead(PrgRegist, 3) == false) {//only switch mode, CV mode bits 3-0 false		
-		bitSet(lsb, 3); //TIJDELIJK in single mode moet dit worden gebruikt voorlopig ff constant true		
+		//bitSet(lsb, 3); //on/off	in switched
 		if (bitRead(SW2[programSw],2) == true) bitSet(lsb, 2);
 		if (bitRead(SW2[programSw], 1)  == true) bitSet(lsb, 1);
-
-		if (bitRead(SW2[programSw], 3) == false) { //not wissel <> mode
-			if (bitRead(SW2[programSw], 0) == true)bitSet(lsb, 0);
-		}
+		//if (bitRead(SW2[programSw], 3) == false) { //not wissel <> mode
+			//if (bitRead(SW2[programSw], 0) == true)bitSet(lsb, 0);
+		//}
 		//bit 0 TIJDELIJK ff false stellen
-}
+		}
 
 	return lsb;
 }
@@ -1364,7 +1377,7 @@ void IOLoop() { //ioloop= in-out loop
 	}
 }
 void Switched(byte k, byte r) {//handles switches
-	byte onzin;
+	byte as=0;
 int c = 0;
 int adress = 0;
 int sw = 0;
@@ -1392,12 +1405,9 @@ int sw = 0;
 
 				sw = (i*8) + (CColums + 1);
 				//*******************************
-				//indication leds
-				if (bitRead(SW2[sw], 3) == true) {
-					//Serial.println(bitRead(LedRow[0], 3));
+
 					LedRow[CColums] ^= 1 << i; //toggle indicatorled	
-					//Serial.println(bitRead(LedRow[0],3));
-				}
+
 
 				programSw = sw; //last choosen switch for program mode
 				l1 = "Knop: ";
@@ -1423,14 +1433,23 @@ int sw = 0;
 						
 						CMSB[c] = DCCmsb();
 						CLSB[c] = DCClsb();
-
-						//only for 'wissel <>' mode toggle 
-						if (bitRead(SW2[programSw], 3) == true) {
+						
 						SwitchState[CColums] ^= (1 << i); //zet on/off invert, voor deze schakelaar
-						if (bitRead(SwitchState[CColums], i) == true) {
-							CLSB[c] |= (1 << 0); //set r/l adres +1 
-							//leds en lcd texten aanpassen
+						
+						if (bitRead(SW2[programSw], 3) == true) { //both channels on 1 switch
+						CLSB[c] |= (1 << 3);//always on						
+						if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 0); //switch channel				
 						}
+						else { //only 1 channel on switch
+							//twee mogelijkheden, wissel of apart 
+							if (bitRead(SW2[programSw], 4) == true) {//wissel
+								if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
+								CLSB[c] |= (1 << 3); //channel on always
+							}
+							else { //apart
+							if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
+							if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 3); //channel on/off
+							}
 						}
 
 						CERROR[c] = CMSB[c] ^ CLSB[c]; //xor bytes
