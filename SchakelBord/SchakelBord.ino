@@ -502,10 +502,22 @@ void lcdtxt(int pm) { //schrijft texten naar lcd
 		break;
 	
 	case 30:
-			l2 = " Schakelaar type";
+			l2 = " Knop type";
 			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
-			//bitSet(IORegist, 6);
 			break;
+	case 31:
+		//schakelaartype bit5 van sw2 true is impuls, false is continue
+		//regel 1
+		l1 = "(";
+		l1.concat(programSw);
+		l1.concat(")-Knop type");
+
+			//regel 2
+		txtknoptype();
+		lcdrefresh = 2;
+		programmode = 32;
+		break;
+
 	case 40:
 			l2 = " puls, continue";
 			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
@@ -581,15 +593,15 @@ byte 1= 8 bits adres bit7=msb bit0=lsb bit9 van het adres (bit 6 in byte2 van he
 max dcc adres = 255 (1024 wissel adressen, 2048 single adressen)
 
 Als EEPROM adres nog NIET is geprogrammeerd bij bv. nieuwe arduino dan is waarde 0xFF
-byte 2= 
-bit7=dcc, continue(true) of impuls (false)
-bit6=switch, continue(true) of impuls(false)
-bit5=single (false) of dual(true)
-bit4=switch, Rechtdoor(false) of Afbuigend(true)
-bit3=On (true) of off(false)
-bit2=msb pair
-bit1=lsb pair
-bit0= dcc, rechtdoor (false) of afbuigend(true)**overeenkomst met bit0 in byte2 van dcc command is verwarrend.
+byte SW2= 
+bit7 not used
+bit6 dcc continue of puls
+bit5 switch continu of puls
+bit4 = wissel of apart
+bit3 both=false single=true (standaard 0)
+bit2 welke decoder van de 4 bit 1
+bit1 welke decoder van de 4 bit 0
+bit0= welke van het paar. True=afslaan, false is rechtdoor
 	*/
 int temp = 0;
 static int adrs; //dcc adres actief switch
@@ -697,6 +709,20 @@ static int adrs; //dcc adres actief switch
 		EEPROM.write(programSw + 256, SW2[programSw]);
 			break;//for case 22		
 
+		case 30:
+			//Serial.println("jopie");
+			txtmem(0);
+			bitSet(PrgRegist, 1); //valuemode	
+			programmode = 31;
+			break;
+
+		case 32:
+			programmode = 15;
+			EEPROM.write(programSw + 256, SW2[programSw]);
+			break;
+
+
+
 	case 50: //switch 7 programmode 50
 		//Serial.println("nu dus naar cv program");
 		bitSet(PrgRegist, 1); //Value mode
@@ -773,6 +799,12 @@ static int adrs; //dcc adres actief switch
 				}
 				txtpoort();
 				break;
+
+			case 32: 
+				SW2[programSw] ^= (1 << 5); //toggle bit 5
+				txtknoptype();
+				break;
+
 
 			case 52: //case 6 encoder, CV keuze 
 				//Serial.println("nu dus cv kiezen");
@@ -913,6 +945,15 @@ void txtmem(byte A) {
 		programmode = PMmem;
 	}
 
+}
+void txtknoptype() {
+	//schakelaartype bit5 van sw2 true is impuls, false is continue
+	if (bitRead(SW2[programSw],5) == true) {
+		l2 = " Moment";
+	}
+	else {
+		l2 = " Continue";
+	}
 }
 void adreslcd(int a) { //plaats adres in l2
 	 int c = 512;
@@ -1377,10 +1418,10 @@ void IOLoop() { //ioloop= in-out loop
 	}
 }
 void Switched(byte k, byte r) {//handles switches
+	//switchtype =  SW2 bit5 true = moment false = continue
 	byte as=0;
 int c = 0;
 int adress = 0;
-int sw = 0;
 
 	for (int i = 0; i < 8; i++) { //kolom bepalen
 		//Serial.println(k);
@@ -1388,77 +1429,79 @@ int sw = 0;
 	}
 	//xor het gemeten rij met de vorige meting
 	SwitchChanged = r ^ SwitchRow[CColums];
-	SwitchRow[CColums] = r; //save new rowstate
-	
+	SwitchRow[CColums] = r; //save new rowstate	
+
 	for (int i = 0; i < 8; i++) {
-		if (bitRead(SwitchChanged, i) == true) {
-
-				//Serial.print("begin switched: ");
-				//Serial.println(bitRead(LedRow[CColums], i));
-
-			if (bitRead(r, i) == true) { //found switch has become true//***
-												
-				//schakelaar bepaald en stand txt weergeven op LCD
-				//tevens RESET van de programmeer stand, altijd
+		if (bitRead(SwitchChanged, i) == true) { //found switch status changed			
+			programSw = (i*8) + (CColums + 1);
 				programmode = 0;
-				PMmem = 0;
-
-				sw = (i*8) + (CColums + 1);
-				//*******************************
-
-					LedRow[CColums] ^= 1 << i; //toggle indicatorled	
-
-
-				programSw = sw; //last choosen switch for program mode
+				PMmem = 0;	
 				l1 = "Knop: ";
-				l1.concat(sw);
+				l1.concat(programSw);
 
-				if (bitRead(LedRow[CColums],i) == true) {
-					l2 = "Aan";
+			if (bitRead(SW2[programSw], 5) == true) { //moment switch
+
+				if (bitRead(r, i) == true) { //found switch has become true//***
+					SwitchState[CColums] ^= (1 << i); //zet on/off invert, voor deze schakelaar
+				} // switch become true		
+			}
+			else { //continue switch
+
+				if (bitRead(r, i) == true) { //found switch has become true//***
+					bitSet(SwitchState[CColums], i);
 				}
 				else {
-					l2 = "Uit";
+					bitClear(SwitchState[CColums], i);
 				}
-				lcdrefresh = 0;
-				//Serial.println(l2);
-				bitSet(IORegist, 6); //vragen om nieuwe text (vertraagd via loop())
+			}
 
-				while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
-					if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1	
+			//leds instellen en LCD
+			//LedRow[CColums] ^= 1 << i; //toggle indicatorled
+			if (bitRead(SwitchState[CColums], i) == true) {
+				bitSet(LedRow[CColums], i);
+				l2 = "Aan";
+			}
+			else {
+				bitClear(LedRow[CColums], i);
+				l2 = "Uit";
+			}
+			lcdrefresh = 0;
+			bitSet(IORegist, 6); //vragen om nieuwe text (vertraagd via loop())
 
-						//bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
-						bitSet(CREG[c], 7); //claim dit command geheugen
-						bitClear(CREG[c], 6);//command voor bediening (true is voor CV zenden)
-						bitSet(CREG[c], 2); //zet uitvoer counter op 4.
-						
-						CMSB[c] = DCCmsb();
-						CLSB[c] = DCClsb();
-						
-						SwitchState[CColums] ^= (1 << i); //zet on/off invert, voor deze schakelaar
-						
-						if (bitRead(SW2[programSw], 3) == true) { //both channels on 1 switch
+			//create DCC command 
+			while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
+				if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1	
+
+													//bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
+					bitSet(CREG[c], 7); //claim dit command geheugen
+					bitClear(CREG[c], 6);//command voor bediening (true is voor CV zenden)
+					bitSet(CREG[c], 2); //zet uitvoer counter op 4.
+
+					CMSB[c] = DCCmsb();
+					CLSB[c] = DCClsb();
+
+					if (bitRead(SW2[programSw], 3) == true) { //both channels on 1 switch
 						CLSB[c] |= (1 << 3);//always on						
 						if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 0); //switch channel				
+					}
+					else { //only 1 channel on switch
+						   //twee mogelijkheden, wissel of apart 
+						if (bitRead(SW2[programSw], 4) == true) {//wissel
+							if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
+							CLSB[c] |= (1 << 3); //channel on always
 						}
-						else { //only 1 channel on switch
-							//twee mogelijkheden, wissel of apart 
-							if (bitRead(SW2[programSw], 4) == true) {//wissel
-								if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
-								CLSB[c] |= (1 << 3); //channel on always
-							}
-							else { //apart
+						else { //apart
 							if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
 							if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 3); //channel on/off
-							}
 						}
-
-						CERROR[c] = CMSB[c] ^ CLSB[c]; //xor bytes
-						c = 10;
 					}
-					c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
+
+					CERROR[c] = CMSB[c] ^ CLSB[c]; //xor bytes
+					c = 10;
 				}
-			} // switch become true			
-		}
+				c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
+			}	
+		}//found switch status changed
 	}
 	bitClear(PrgRegist, 3); //reset CV programmode	
 }
