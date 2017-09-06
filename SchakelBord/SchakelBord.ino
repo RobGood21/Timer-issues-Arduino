@@ -12,80 +12,25 @@ Een leeg, nog niet geprogrammeerd byte in EEPROM is altijd een Hex FF (B1111 111
 een nog niet gedefinieerd dcc kanaal = dus altijd adres 1024 (256-4)
 */
 unsigned long tijd = 0;
-boolean DEBUG = false; //false; //toont alle teksten als true  //straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
+//boolean DEBUG = false; //false; //toont alle teksten als true  //straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
 byte MEMORIE[16];
 //byte RIJ = 0;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
 //int tic; //Teller loop functies in INPUTCOMMAND
 //byte KOLOM = 0; //wordt gebruikt in Testinput
-void Tijdelijk()
-{
-	/* Al gekopieerd naar setup
-	//tbv INPUTCOMMAND, tijdelijke pinnen tbv schakelaars en Leds.
-	//Voor schakelaars PORTC bit 0:5  (PINA0:PINA5) instellen als input dus false
-	DDRC = 0; //alle PORTC pins als input. ook de reset PORTC6
-	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
-	PORTB |= (1 << PORTB3); //Set high, led off
-	PINC = 0; //clear alle inputs
-	OLDCP = PINC; //kopieer huidige PINC	//voor ontwerp knoppen en command berekening even uitzetten
-	TRAINSETUP();
-	TRAIN();
-	*/
-	//INPUTSETUP(); //Setup routine voor inputzaken kan weg...
-
-	//tijdelijk even commandoos in een byte array plaatsen
-
-	/*
-	Hoe zit ut in elkaar
-	0=Byte 1
-	1=byte 2
-	Van Byte 1 bit7=1 bit6=0 bit5-0 = LSB van adress dus 1000 0001 = adres 1 1000 0010 = adres 2 let wel van een set van 4 dubbel adressen 
-	Van Byte 2 bit7=1 bit6-5-4 = de MSB van het adres dus de hoge waardes geinverteerd, bit3 = aan uit van het adres bit2-1 welke van de vier dubbeladressen bit0 welke van het dubbeladres 
-	Zeg maar links of rechts.
-	Onderstaand voorbeelden tijdelijke bewaar dit want morgen ben je het weer vergeten....
-	*/
-
-	//adres 0 bestaat dus niet!!! getest met ecos op 12aug2017
-	MEMORIE[0] = B10000001; //adres 1 van 4 dubbeladressen dus 1-2-3-4 adres 0 komt dus niet voor...
-	MEMORIE[1] = B11111000; //laatste bit bepaald WELKE van de twee dus recht of afbuigend =1-1
-
-	MEMORIE[2] = B10000001;//2 =1-2
-	MEMORIE[3] = B11111010; 
-
-	MEMORIE[4] = B10000001;//3 = 1-3
-	MEMORIE[5] = B11111100; 
-
-	MEMORIE[6] = B10000001;//4 =1-4
-	MEMORIE[7] = B11111110; 
-
-	//tweede
-
-	MEMORIE[8] = B10000011; // adres 3 van 4 dubbeladressen dus 5-6-7-8
-	MEMORIE[9] = B11111000; //
-
-	MEMORIE[10] = B10000011; //6
-	MEMORIE[11] = B11111010; 
-
-	MEMORIE[12] = B10000011;//7
-	MEMORIE[13] = B11111100; 
-
-	MEMORIE[14] = B10000011;//8
-	MEMORIE[15] = B11111110; 
-							
-
-}
 
 //declaraties Switches Leds
 byte SwitchRow[8];
-byte LedRow[8]  = { 0 };//  { 0, 0, 0, 0, 0, 0, 0, 0 };
+byte LedRow[8];// = { 0 };//  { 0, 0, 0, 0, 0, 0, 0, 0 };
 byte SwitchChanged;
 byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
 // volatile int CColums = 0; //column in processing
 byte CColums = 0;
+byte waarom; //nodig om onbegrijpelijke reden... zie loop (waarschijnlijk compiler probleem)
 
 byte SW1[255]; //byte1 switches (8 bits adres)
 byte SW2[255]; //byte 2 variables
 /*
-bit7 not used
+bit7 Opstart state true =uit, false = aan.
 bit6 dcc continue of puls
 bit5 switch continu of puls
 bit4 = wissel of apart
@@ -94,24 +39,17 @@ bit2 welke decoder van de 4 bit 1
 bit1 welke decoder van de 4 bit 0
 bit0= welke van het paar. True=afslaan, false is rechtdoor
 */
-
 const int AantalPORTS = 6; //Aantal aangesloten schuifregisters. Xtra seriele poorten. 
-
 unsigned int LCDDelay = 0; //teller voor vertraging van proces.
 byte lcdnew=0; //new state LCD switches
 byte lcdold = 0;//last state of lcd switches
 byte lcdchanged; //Holds changed switch states
-byte lcdon = 0; //holds actice switch
-
-
+byte lcdon = 0; //holds active switch
 int programmode = 0; //programma mode 0=normaal 1=adres 2=accessory type (single, dual) 3= switch type 4=CV
 int programSw = 0; //Welke switch wordt geprogrammeerd
-
-
 byte LCDbyte = 0; //Bevat actueel aan LCD te zenden byte
 int lcdrefresh = 0; //Hoe moet de lcd worden aangepast?
 int lcdadres = 0; //adres waar lcd naar toe moet
-
 String l1 = String(16); //te tonen text 1e regel
 String l2 = String(16); //2e regel
 String l1mem = String(16); // geheugenplaats voor txt.
@@ -120,9 +58,7 @@ unsigned int PMmem; //onthouden in welke programmode
 byte CVnmem = 2; //memorie last CV number
 byte CVvmem = 0; //memorie last CV value
 int poortsw = 0; //dual or single mode of dcc adres
-
 byte PORTS[AantalPORTS]; // aantal shiftregisters in serie
-
 byte RijRegister = B00000000; // bevat ingelezen rij switches
 byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
 //bit7=nc 
@@ -133,12 +69,12 @@ byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
 //bit2=OpstartTest true=aan false=uit  
 //bit1=SSC switch status changed  
 //bit0=vraag lezen PISO register. (rijen van switches) true is bezig false =klaar
-
 byte PrgRegist = 0; //flags tbv programmeren
 //bit 0= encoder B channel
 //bit 1= true =value mode,  false= parameter mode
 //bit 2 = ja/nee voor bevestiging in CV programming
 //bit3=CV sending, true
+//bit4=true INITIALISE programSw has switch number, false normal operation
 byte groep = 0; //bevat laatste groep adres
 byte dc = 0;//bevat laatste decoder adres (wie van de vier)
 
@@ -431,9 +367,17 @@ PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms.
 SwitchLoop();
 lcdswitch();
 SLOWEVENTS();
+if (bitRead(PrgRegist, 4) == true)is(); //stand switches naar beginstand. 
 }
 void lcdtxt(int pm) { //schrijft texten naar lcd
 	switch (pm){
+	case 0:
+		l1 = "SchakelBord";
+		l2 = "Versie 1.01";
+		lcdrefresh = 0;
+		break;
+
+
 	case 10:		
 			l2 = " DCC adres";		
 			lcdrefresh = 1;
@@ -519,10 +463,23 @@ void lcdtxt(int pm) { //schrijft texten naar lcd
 		break;
 
 	case 40:
-			l2 = " puls, continue";
+		//bit7 van SW2 true = off!!! false is on... dit ivm opstart van een schone arduino
+			l2 = " stand bij start";
 			lcdrefresh = 1; //vervang alleen tweede lijn en set cursor op knipperen
 			//bitSet(IORegist, 6);
 			break;
+
+	case 41:
+		l1 = "(";
+		l1.concat(programSw);
+		l1.concat(")-Bij start");
+
+		//regel 2
+		txtstart();
+		lcdrefresh = 2;
+		programmode = 42;
+
+		break;
 	
 	case 50:
 			l2 = " CV instellen";
@@ -710,7 +667,6 @@ static int adrs; //dcc adres actief switch
 			break;//for case 22		
 
 		case 30:
-			//Serial.println("jopie");
 			txtmem(0);
 			bitSet(PrgRegist, 1); //valuemode	
 			programmode = 31;
@@ -720,6 +676,17 @@ static int adrs; //dcc adres actief switch
 			programmode = 15;
 			EEPROM.write(programSw + 256, SW2[programSw]);
 			break;
+
+		case 40:
+			txtmem(0);
+			bitSet(PrgRegist, 1); //valuemode	
+			programmode = 41;
+			break;
+		case 42:
+			programmode = 15;
+			EEPROM.write(programSw + 256, SW2[programSw]);
+			break;
+
 
 
 
@@ -801,8 +768,14 @@ static int adrs; //dcc adres actief switch
 				break;
 
 			case 32: 
+				lcdrefresh = 1;
 				SW2[programSw] ^= (1 << 5); //toggle bit 5
 				txtknoptype();
+				break;
+			case 42:
+				lcdrefresh = 1;
+				SW2[programSw] ^= (1 << 7); //toggle bit 5
+				txtstart();
 				break;
 
 
@@ -953,6 +926,15 @@ void txtknoptype() {
 	}
 	else {
 		l2 = " Continue";
+	}
+}
+void txtstart() {
+	//initial state switch bit7 van sw2 true uit, false is aan
+	if (bitRead(SW2[programSw], 7) == true) {
+		l2 = " Uit";
+	}
+	else {
+		l2 = " Aan";
 	}
 }
 void adreslcd(int a) { //plaats adres in l2
@@ -1300,44 +1282,6 @@ void LCDLoop() {  //aanroep uit isr timer 2 ???
 		count = 0;
 	}
 }
-/*
-
-void TestInput() { //dient als een soort van DCC monitor, schakel adres 0 pe 6 seconden om.t
-
-	static byte r, c, ad; //teller kolom, Rij, teller commands en adres max 255 ...!
-						  //KOLOM hoeft niet, in INPUTCOMMAND() worden de kolommen afgelopen, in KOLOM staat nu het actieve kolom waar de switch event in is gevonden. 
-						  //if (bitRead(SWREG, 0) == true) { // nieuwe switches, ingedrukte schakelaars.
-						  //	RIJ en KOLOM hebben de port met nieuwe drukknop.
-						  //Serial.println(RIJ);			
-						  //Serial.println("hier...");
-						  //SHOWBYTE(RIJ);
-
-	r = 0;
-	c = 0;
-	ad = 0;
-	//Serial.print("jo");
-
-	//Vrije plek voor een command zoeken in CREG[] tsnn cccc bit T=false  
-	while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
-		if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
-
-											//Serial.println("dit mag maar 1 keer");
-
-											//bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
-			bitSet(CREG[c], 7); //claim dit command geheugen
-			bitSet(CREG[c], 2); //zet uitvoer counter op 4.
-			ad = 0;// ((KOLOM * 8) + r) * 2;//adres decimaal bepalen kolom x 8 + gevonden bit in RIJ
-			CMSB[c] = MEMORIE[ad]; //haal MSB uit geheugen straks EEPROM
-			CLSB[c] = MEMORIE[ad + 1];  //Haal LSB							
-			SwitchState[KOLOM] ^= (1 << r); //zet on/off invert, voor deze schakelaar
-			if (bitRead(SwitchState[KOLOM], r) == true) CLSB[c] |= (1 << 0); //set r/l adres +1 
-			CERROR[c] = CMSB[c] ^ CLSB[c];
-			c = 10;
-		}
-		c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
-	}
-}
-*/
 void IOLoop() { //ioloop= in-out loop
 				/*
 				zet continue de PORTS[n] in schuifregisters, toont deze.En leest de schakelaars uit.
@@ -1417,15 +1361,54 @@ void IOLoop() { //ioloop= in-out loop
 		break;
 	}
 }
+void is() { //is= initialise switches
+	static byte r = 0; //
+	static byte c = 0;
+	static byte teller = 2; //aantal malen dat init wordt doorlopen
+	//dient om bij opstarten de standen van de wissels te initialiseren.
+	//nodig column, nummer in de rij
+	//bit 4 in progregist geeft aan of initialisatie bezig is. 
+	//bit 7 in sw2 geeft switchstand false -aan   true -uit
+	//run via timer 2??? slow events...
+
+	//kolom=0 //rij=0
+	programSw = (r * 8) + (c + 1); //calc var programsw
+
+	//Serial.println(SW1[programSw]);
+
+	if ((SW1[programSw] < 255)&& (bitRead(SW2[programSw], 5) == true)) { 
+	
+	//	Serial.print("switch:    ");
+	//	Serial.println(programSw);
+	//	Serial.print("------- ");
+	//Serial.println(SW1[programSw]);	
+
+	
+	//adres between 1 and 254 and switch type is momentary bit5
+		CColums = c;
+		if (bitRead(SW2[programSw], 7) == false) bitSet(SwitchState[CColums], r); //set opgeslagen stand switch
+		leds(r); //set leds
+		DCC(r); //make DCC commands
+	}
+	r++;
+	if (r == 8) {
+		r = 0;
+		c++;
+		if (c == 8) {
+			c = 0;
+			teller--;
+			if (teller==0)	bitClear(PrgRegist, 4);
+		}
+	}
+
+}
 void Switched(byte k, byte r) {//handles switches
 	//switchtype =  SW2 bit5 true = moment false = continue
-	byte as=0;
-int c = 0;
-int adress = 0;
-
+	//bit4 van prgregist = initialise, if true, programsw = dan te zetten switch
+//byte as=0;
+//int adress = 0;
 	for (int i = 0; i < 8; i++) { //kolom bepalen
-		//Serial.println(k);
-		if (bitRead(k, i) == true) CColums = i;
+		if (bitRead(k, i) == true) CColums = i; //kolom 0-7 
 	}
 	//xor het gemeten rij met de vorige meting
 	SwitchChanged = r ^ SwitchRow[CColums];
@@ -1438,9 +1421,7 @@ int adress = 0;
 				PMmem = 0;	
 				l1 = "Knop: ";
 				l1.concat(programSw);
-
 			if (bitRead(SW2[programSw], 5) == true) { //moment switch
-
 				if (bitRead(r, i) == true) { //found switch has become true//***
 					SwitchState[CColums] ^= (1 << i); //zet on/off invert, voor deze schakelaar
 				} // switch become true		
@@ -1454,56 +1435,58 @@ int adress = 0;
 					bitClear(SwitchState[CColums], i);
 				}
 			}
-
-			//leds instellen en LCD
-			//LedRow[CColums] ^= 1 << i; //toggle indicatorled
-			if (bitRead(SwitchState[CColums], i) == true) {
-				bitSet(LedRow[CColums], i);
-				l2 = "Aan";
-			}
-			else {
-				bitClear(LedRow[CColums], i);
-				l2 = "Uit";
-			}
-			lcdrefresh = 0;
-			bitSet(IORegist, 6); //vragen om nieuwe text (vertraagd via loop())
-
-			//create DCC command 
-			while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
-				if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1	
-
-													//bitClear(RIJ, r); //Schakelevent verwerkt dus clear flag
-					bitSet(CREG[c], 7); //claim dit command geheugen
-					bitClear(CREG[c], 6);//command voor bediening (true is voor CV zenden)
-					bitSet(CREG[c], 2); //zet uitvoer counter op 4.
-
-					CMSB[c] = DCCmsb();
-					CLSB[c] = DCClsb();
-
-					if (bitRead(SW2[programSw], 3) == true) { //both channels on 1 switch
-						CLSB[c] |= (1 << 3);//always on						
-						if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 0); //switch channel				
-					}
-					else { //only 1 channel on switch
-						   //twee mogelijkheden, wissel of apart 
-						if (bitRead(SW2[programSw], 4) == true) {//wissel
-							if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
-							CLSB[c] |= (1 << 3); //channel on always
-						}
-						else { //apart
-							if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
-							if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 3); //channel on/off
-						}
-					}
-
-					CERROR[c] = CMSB[c] ^ CLSB[c]; //xor bytes
-					c = 10;
-				}
-				c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
-			}	
+			leds(i); //sets led status
+			DCC(i);	//creates DCC commands		
 		}//found switch status changed
 	}
 	bitClear(PrgRegist, 3); //reset CV programmode	
+}
+void leds(int i) { //switches indicator leds, i=switch in row
+	//leds instellen en LCD
+	//LedRow[CColums] ^= 1 << i; //toggle indicatorled
+	if (bitRead(SwitchState[CColums], i) == true) {
+		bitSet(LedRow[CColums], i);
+		if (bitRead(PrgRegist, 4) == false) l2 = "Aan";
+	}
+	else {
+		bitClear(LedRow[CColums], i);
+		if (bitRead(PrgRegist, 4) == false) l2 = "Uit";
+	}
+	if (bitRead(PrgRegist, 4) == false) {
+	lcdrefresh = 0;
+	bitSet(IORegist, 6); //vragen om nieuwe text (vertraagd via loop())
+	}
+
+}
+void DCC(int i) { //creates DCC commands i=switch in row
+	int c = 0;
+	while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
+		if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1	
+			bitSet(CREG[c], 7); //claim dit command geheugen
+			bitClear(CREG[c], 6);//command voor bediening (true is voor CV zenden)
+			bitSet(CREG[c], 2); //zet uitvoer counter op 4.
+			CMSB[c] = DCCmsb();
+			CLSB[c] = DCClsb();
+			if (bitRead(SW2[programSw], 3) == true) { //both channels on 1 switch
+				CLSB[c] |= (1 << 3);//always on						
+				if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 0); //switch channel			
+			}
+			else { //only 1 channel on switch
+				   //twee mogelijkheden, wissel of apart 
+				if (bitRead(SW2[programSw], 4) == true) {//wissel
+					if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
+					CLSB[c] |= (1 << 3); //channel on always
+				}
+				else { //apart
+					if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
+					if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 3); //channel on/off
+				}
+			}
+			CERROR[c] = CMSB[c] ^ CLSB[c]; //xor bytes
+			c = 10;
+		}
+		c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
+	}
 }
 void CV() { //creates CV commands	
 	bitSet(PrgRegist, 3); //CV mode needed for creating byte 2 of dcc command
@@ -1608,6 +1591,8 @@ void LedTest() { //opstarten, initialiseren leds en LCD
 			PORTS[2] = B11111111;
 			PORTS[3] = 0;
 			bitClear(IORegist, 2); //verlaat test mode
+			lcdtxt(0);
+			bitSet(PrgRegist, 4); //start init stand switches
 			break;
 			}
 		}
@@ -1690,10 +1675,8 @@ void SetupDCC() { //Setup ports and timers
 void setup() {
 	// test en hulp instellingen
 	Serial.begin(9600);
-	Tijdelijk();
 	LoadData();
-	l1 = "SchakelBord";
-	l2 = "Versie 1.01";
+
 	
 	bitSet(IORegist, 2); //test modus inschakelen
 	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
@@ -1704,28 +1687,20 @@ void setup() {
 	PORTC |= (1 << PORTC3);//enable LCD hoog
 	//bitClear(PORTS[4], 6); //LCD enable hoog via shiftregister
 	SetupDCC();	
+
+
 }
-byte waarom; //nodig om onbegrijpelijke reden... zie loop
-void loop() {
-	
+void loop() {	
 	DCCLOOP();
 	IOLoop();
-	//LCDLoop();	
-	//timer voor zetjes
-	if (millis() - tijd > 300) {
-
-
+	if (millis() - tijd > 300) { // ververs periode van LCD
 		//LCD txt vervangen
-		if (bitRead(IORegist, 6) == true) {				
-
-			waarom=(bitRead(LedRow[0],0)); ///niet te begrijpen wel noodzakelijk ander doen een hele rits leds in colum 0 het niet...
-			
+		if (bitRead(IORegist, 6) == true) {	
+			waarom=(bitRead(LedRow[0],0)); ///niet te begrijpen wel noodzakelijk ander doen een hele rits leds in colum 0 het niet...vermodelijk probleem met de compiler
 			bitClear(IORegist, 6);
 			bitSet(IORegist, 3);
-
-			//Serial.println(l2);
-			//delay(100);
 		}
+		//if (bitRead(PrgRegist, 4) == true)is(); //stand switches naar beginstand. 
 		tijd = millis();
 	}
 }
