@@ -1,34 +1,30 @@
 /*
  Name:		SchakelBord.ino
+ Version:	1.02
  Created:	7/7/2017 10:20:39 PM
  Author:	Rob Antonisse
  Info:		www.wisselmotor.nl
 */
 
-//tijdelijke en hulp declaraties en functies
+//declaraties
 #include <EEPROM.h>
-/*
+/* Opmerkingen, remarks:
 Een leeg, nog niet geprogrammeerd byte in EEPROM is altijd een Hex FF (B1111 1111) 
 een nog niet gedefinieerd dcc kanaal = dus altijd adres 1024 (256-4)
 */
-unsigned long tijd = 0;
-//boolean DEBUG = false; //false; //toont alle teksten als true  //straks naar eeprom voor commando bytes tijdelijk array voor 16 commands
-byte MEMORIE[16];
-//byte RIJ = 0;   //8 rijen onder 8 kolommen schakelaars kan array worden bij MEER dan 64 schakelaars
-//int tic; //Teller loop functies in INPUTCOMMAND
-//byte KOLOM = 0; //wordt gebruikt in Testinput
 
+//versie
+String versie = String(5)="1.02";
+unsigned long tijd = 0;
 //declaraties Switches Leds
 byte SwitchRow[8];
-byte LedRow[8];// = { 0 };//  { 0, 0, 0, 0, 0, 0, 0, 0 };
+byte LedRow[8];
 byte SwitchChanged;
-byte SwitchState[8];  //Bevat actuele stand accessoire. aantal rijen per kolom hier aanpassen bij meer schakelbord pcb's
-// volatile int CColums = 0; //column in processing
+byte SwitchState[8];
 byte CColums = 0;
-byte waarom; //nodig om onbegrijpelijke reden... zie loop (waarschijnlijk compiler probleem)
-
-byte SW1[255]; //byte1 switches (8 bits adres)
-byte SW2[255]; //byte 2 variables
+byte waarom; //Nodig, compiler issue
+byte SW1[255]; //byte1 switch data (8 bits adres)
+byte SW2[255]; //byte2 switch data 
 /*
 bit7 Opstart state true =uit, false = aan.
 bit6 dcc continue of puls
@@ -52,9 +48,9 @@ int lcdrefresh = 0; //Hoe moet de lcd worden aangepast?
 int lcdadres = 0; //adres waar lcd naar toe moet
 String l1 = String(16); //te tonen text 1e regel
 String l2 = String(16); //2e regel
-String l1mem = String(16); // geheugenplaats voor txt.
-String l2mem = String(16);
-unsigned int PMmem; //onthouden in welke programmode
+String l1mem = String(16); // geheugenplaats voor txt regel 1.
+String l2mem = String(16);//idem regel 2
+unsigned int PMmem; //geheugen programmode
 byte CVnmem = 2; //memorie last CV number
 byte CVvmem = 0; //memorie last CV value
 int poortsw = 0; //dual or single mode of dcc adres
@@ -85,9 +81,7 @@ volatile unsigned int SCOUNTER = 0;
 unsigned int CS = 0; //Commandstatus beter unsigned integer (aanpassen) *****
 int i; //teller voor loop functies in train, noet signed zijn...wordt negatief,  hier nog naar kijken is onhandig.
 int nc;
-
 int BC = 0; //=ByteCount Aantal verzonden bytes
-//BT=constante moet variable zijn.. voor cv bt=6 
 int BT = 3; //ByteTotal =aantal te verzenden bytes, //xxx declaraties voor debugging en testen
 byte PREG = 0; // Public register voor 8 booleans
 byte CREG[10]; //status van dit command adres
@@ -108,18 +102,11 @@ void LoadData(){ //gets data from EEPROM during power-up
 }
 ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het verzenden van de DCC pulsen.
 	cli(); //disable interrupts
-		   // PORTB ^= (1 << PORTB2); //toggles PIN10, better do this with a hardware inverter. 
-
 	GPIOR2 ^= (1 << 0); //toggle het BITPART deel, als BITPART=false dan is het bit klaar >> nieuw bit bepalen.
 	if (bitRead(GPIOR2, 0) == true) { //bit is klaar .. verder
-
 		switch (CS) { //CS=Commandstatus ) 0=Wacht op Command; 1=Preample zenden; 2=Tussenbit zenden; 3=Byte verzenden 
-
 		case 0: //Wacht	//Topwaarde wordt niet aangepast, timer gaat gewoon door met trues zenden	//test Commandready
 			i++; //verhoog preample teller, preample tijdens wachten op command
-
-				 //if (DEBUG==true) Serial.println("wacht op COMMAND");			
-
 			if (bitRead(GPIOR2, 1) == true) //COMMANDready == true
 			{
 				CS = 1; //nu volgende true bit preample verzenden 
@@ -130,29 +117,14 @@ ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het
 		case 1: //send preample
 				//registers resetten
 			bitClear(GPIOR2, 3); //Laatste byte is false, nieuw command
-
-								 //if (DEBUG == true) {
-								 //Serial.print("Preample: "); 
-								 //Serial.println(i);
-								 //}
 			if (i < 14) { //is lengte preample dus minimaal 14
 				i++;
 			}
 			else {
 				CS = 2; //15 true bits verzonden nu een false bit als volgend bit
-						//	i = 7; //25feb dubbel? teller al instellen voor 1e byte //	Serial.println("");
 			}
 			break; //(1)
-
 		case 2: //send Tussenbit
-
-				//if (DEBUG == true) {
-				//	Serial.print("Laatstebyte LOOP():");	
-				//	Serial.print(bitRead(GPIOR2, 2)); 
-				//	Serial.print("    Laatste Byte interrupt:  "); 
-				//	Serial.println(bitRead(GPIOR2, 3));
-				//}
-
 			if (bitRead(GPIOR2, 3) == true) { //Laatste byte flag = true, laatste byte is verzonden nu uitspringen
 
 				bitClear(OCR1AL, 7); //instellen op 1 bit
@@ -168,36 +140,16 @@ ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het
 						//bit 7=nc
 
 				GPIOR2 = B00110001; //Flag register instellen voor nieuw command
-
-									//if(DEBUG==true) Serial.println("Command ready");
-
 			}
 			else { //Laatste byte niet verzonden
 				bitSet(OCR1AL, 7); //verhoog OCR1A counter met 128, zend een 0 bit
-
-								   //if (DEBUG==true) Serial.println("tussenbit");
-
 				CS = 3; //volgende doorloop naar byte verzenden.
 				i = 7; //reset bitcounter
 				if (bitRead(GPIOR2, 2) == true) bitSet(GPIOR2, 3); //Laatste byte  flag true, verkregen uit LOOP() bij volgende doorloop van T(ussenbit) uitspringen.
 			}
 			break;//(2)
-
 		case 3: //send Byte MSB first
-
-				//if (DEBUG == true) {
-				//	Serial.print("byte:  ");	
-				//	Serial.print(bitRead(GPIOR2, 6)); 
-				//	Serial.print("   Bit:  "); Serial.print(i);
-				//}
-
 			if (bitRead(GPIOR2, 6) == false) { //BYTEpointer false= GPIOR0, true = GPIOR1
-
-											   //if (DEBUG == true) {
-											   //	Serial.print("   Bitwaarde:  ");
-											   //	Serial.println(bitRead(GPIOR0, i));
-											   //}
-
 				if (bitRead(GPIOR0, i) == true) { //een 1 bit
 					bitClear(OCR1AL, 7);
 				}
@@ -208,11 +160,6 @@ ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het
 				if (i < 0) bitSet(GPIOR2, 4); //laatste bit verzonden, byte vrijgeven true =vrij
 			}
 			else { //Bytepointer=true, GPIOR1 register sturen
-
-				   //if (DEBUG == true) {
-				   //	Serial.print("   Bitwaarde:  "); 
-				   //	Serial.println(bitRead(GPIOR1, i));
-				   //}
 				if (bitRead(GPIOR1, i) == true) { //een 1 bit
 					bitClear(OCR1AL, 7);
 					//if (bitRead(OCR1AL, 7) == true) OCR1A = (OCR1A >>1);
@@ -227,22 +174,14 @@ ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het
 			if (i < 0) { //laatste bit verzonden 
 				GPIOR2 ^= (1 << 6); //toggle bytepointer				
 				CS = 2; //naar tussenbit
-						//if (DEBUG == true)	Serial.println("Bytepointer getoggeld");
 			}
 			break; //(3)
 		}
-
-//	}
-//	else { //bit is niet klaar, gebeurt gewoon niks
-//		IOLoop();
-
-	}
-	
+	}	
 	sei(); //Enable interrupts
 }
 void SLOWEVENTS() {	
 	SCOUNTER++;  //Counter, creates pauze for short detectection
-
 	if (bitRead(PIND, PIND4) != BUT1) { //DCC on/off switch
 		if (BUT1 == true) BUT1 = false;
 		else { 
@@ -273,7 +212,6 @@ void DCCLOOP() {
 	bit2 count aantal te verzenden msb
 	bit1 count aantal te verzenden 
 	bit0 count aantal te verzenden lsb
-
 	*/
 	static byte CBYTE[6]; //static geheugen voor het actieve Commando, switch modes uses 3, CV mode uses 6
 	int b; //teller en flag voor new command helaas hele byte?
@@ -287,7 +225,6 @@ void DCCLOOP() {
 					bitClear(CREG[b], 5);
 					bitClear(CREG[b], 4); //reset de pauze timer
 					CREG[b] = CREG[b] - 1; //verlaagt de counter. 
-
 					if (bitRead(CREG[b], 6) == true) {
 						//CV command
 					BT = 6;
@@ -307,7 +244,6 @@ void DCCLOOP() {
 					}
 					b = 10; //uitspingen als command is gevonden
 					nc = 1;
-
 					part = CREG[b];
 					part = part << 5;
 					if (part == 0) CREG[b] = 0; //counter op nul, CREG en command array vrij geven.
@@ -328,7 +264,6 @@ void DCCLOOP() {
 			CBYTE[0] = B11111111; //laad idle command
 			CBYTE[1] = B00000000;
 			CBYTE[2] = B11111111;
-
 		}
 		GPIOR0 = CBYTE[0];  //laad eerste byte van command
 		GPIOR1 = CBYTE[1]; //laad tweede byte van command
@@ -355,7 +290,6 @@ void DCCLOOP() {
 				}
 			}
 			//if (nc==1) Serial.println(BC);
-
 		}
 		else {// BC > BT Geen byte meer te verzenden 
 			if (bitRead(GPIOR2, 3) == false) bitSet(GPIOR2, 2); //laatste byte is doorgegeven, alleen zetten als laatste byte in interrupt nog false is
@@ -373,16 +307,14 @@ void lcdtxt(int pm) { //schrijft texten naar lcd
 	switch (pm){
 	case 0:
 		l1 = "SchakelBord";
-		l2 = "Versie 1.01";
+		l2 = "Versie ";
+		l2.concat(versie);
 		lcdrefresh = 0;
 		break;
-
-
 	case 10:		
 			l2 = " DCC adres";		
 			lcdrefresh = 1;
 		break;
-
 	case 11: //dcc adres value
 		l1 = "(";
 		l1.concat(programSw);
@@ -508,7 +440,6 @@ void lcdtxt(int pm) { //schrijft texten naar lcd
 		l1.concat("CV");
 		l1.concat(CVnmem+1);
 		l1.concat(" Waarde:");
-
 		txtCV();
 		programmode = 54;
 		break;
@@ -687,9 +618,6 @@ static int adrs; //dcc adres actief switch
 			EEPROM.write(programSw + 256, SW2[programSw]);
 			break;
 
-
-
-
 	case 50: //switch 7 programmode 50
 		//Serial.println("nu dus naar cv program");
 		bitSet(PrgRegist, 1); //Value mode
@@ -715,8 +643,6 @@ static int adrs; //dcc adres actief switch
 		//retour naar begin 
 		programmode = 15;
 		break;
-
-
 
 //**************Afsluiting Case 7 decoder switch****************
 		}
@@ -1675,9 +1601,7 @@ void SetupDCC() { //Setup ports and timers
 void setup() {
 	// test en hulp instellingen
 	Serial.begin(9600);
-	LoadData();
-
-	
+	LoadData();	
 	bitSet(IORegist, 2); //test modus inschakelen
 	DDRB |= (1 << DD3); //set PIN11 as output, Led voor INPUTCOMMAND
 	PORTB |= (1 << PORTB3); //Set high, led off
@@ -1686,9 +1610,7 @@ void setup() {
 							// TRAINSETUP();
 	PORTC |= (1 << PORTC3);//enable LCD hoog
 	//bitClear(PORTS[4], 6); //LCD enable hoog via shiftregister
-	SetupDCC();	
-
-
+	SetupDCC();
 }
 void loop() {	
 	DCCLOOP();
