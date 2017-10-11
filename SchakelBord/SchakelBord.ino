@@ -57,7 +57,7 @@ int poortsw = 0; //dual or single mode of dcc adres
 byte PORTS[AantalPORTS]; // aantal shiftregisters in serie
 byte RijRegister = B00000000; // bevat ingelezen rij switches
 byte IORegist = B00000000; //er zijn nog vrije bits te gebruiken als flag
-//bit7=nc 
+//bit7=nc **11 okt divider, counter for slowing scan process
 //bit6=(LCD) txt changed
 //bit5=(LCD) send byte, byte staat klaar te verzenden, wordt verzonden, bij false klaar, wacht op nieuw byte
 //bit4=(LCD) =Vraag lezen PISO(LCD) True is bezig, False is klaar
@@ -298,7 +298,11 @@ void DCCLOOP() {
 }
 ISR(TIMER2_COMPB_vect) { //timer interupt timed en start de 'langzame' events. 
 PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms.
-SwitchLoop();
+
+//**slows scanning process factor 2
+IORegist ^= 1 << 7;
+if (bitRead(IORegist,7)==true)SwitchLoop();
+
 lcdswitch();
 SLOWEVENTS();
 if (bitRead(PrgRegist, 4) == true)is(); //stand switches naar beginstand. 
@@ -1594,7 +1598,7 @@ void SetupDCC() { //Setup ports and timers
 	TCCR2B |= (1 << CS22); //set prescaler 
 	TCCR2B |= (1 << CS21); //set prescaler
 	//prescaler op 256 bij 16Mhz dus ISR iedere 16us.
-						   //TCCR2B |= (1 << CS20); //set prescaler op 1024, result overflow every 16 millisec.
+	//TCCR2B |= (1 << CS20); //set prescaler op 1024, result overflow every 16 millisec. **11okt2017**
 	OCR2B = 100; //timerclock wordt NIET gereset dus frequency bepaald door overflow en prescaler
 	sei(); //interupts weer toestaan	
 }
