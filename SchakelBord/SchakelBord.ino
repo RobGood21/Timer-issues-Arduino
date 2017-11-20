@@ -1,6 +1,6 @@
 /*
  Name:		SchakelBord.ino
- Version:	1.02
+ Version:	1.03
  Created:	7/7/2017 10:20:39 PM
  Author:	Rob Antonisse
  Info:		www.wisselmotor.nl
@@ -14,7 +14,7 @@ een nog niet gedefinieerd dcc kanaal = dus altijd adres 1024 (256-4)
 */
 
 //versie
-String versie = String(5)="1.02";
+String versie = String(5)="1.03";
 unsigned long tijd = 0;
 //declaraties Switches Leds
 byte SwitchRow[8];
@@ -932,7 +932,7 @@ void lcdswitch() { //reads LCD switches and encoder called from ISR timer 2
 
 		//stand van encoder channel B overnemen in prgregist,0
 		if (bitRead(lcdchanged, 5) == true) {
-			if (bitRead(lcdnew, 5) == true) {
+			if (bitRead(lcdnew, 5) == false) { // before 20nov2017 	if (bitRead(lcdnew, 5) == true)	// changes direction of encoder	
 				bitSet(PrgRegist, 0);
 			}
 			else {
