@@ -15,11 +15,20 @@ een nog niet gedefinieerd dcc kanaal = dus altijd adres 1024 (256-4)
 
 //versie
 String versie = String(5)="1.04";
+/*
+versie 1.04 aanpassingen
+Void DCCloop aangepast, command teller en timer veranderd dus hoe vaak en hoe sne achter elkaar de commando's
+In DCC aanpassingen gemaakt zodat het loslaten van een drukknop geen commando's meer verstuurt
+Aantal te verzenden CV nummers aangepast, volgens protocol mag dit tot CV nummer 1024 
+Resultaat nog niet perfect maar wel veel stabieler. 
+*/
+
+
 unsigned long tijd = 0;
 
-//temp
-int errcount = 0;
-unsigned long counttijd;
+//temp, only for debugging
+//int errcount = 0;
+//unsigned long counttijd;
 
 //declaraties Switches Leds
 
@@ -57,7 +66,7 @@ String l2 = String(16); //2e regel
 String l1mem = String(16); // geheugenplaats voor txt regel 1.
 String l2mem = String(16);//idem regel 2
 unsigned int PMmem; //geheugen programmode
-byte CVnmem = 2; //memorie last CV number
+int CVnmem = 2; //memorie last CV number V1.04 naar int
 byte CVvmem = 0; //memorie last CV value
 int poortsw = 0; //dual or single mode of dcc adres
 byte PORTS[AantalPORTS]; // aantal shiftregisters in serie
@@ -188,7 +197,6 @@ ISR(TIMER1_COMPA_vect) {// timer compare interrupt service routine, verzorgt het
 	}	
 	sei(); //Enable interrupts
 }
-
 void SLOWEVENTS() {	
 	SCOUNTER++;  //Counter, creates pauze for short detectection
 	if (bitRead(PIND, PIND4) != BUT1) { //DCC on/off switch
@@ -210,7 +218,6 @@ void SLOWEVENTS() {
 		}
 	}
 }
-//*********************
 void DCCLOOP() { //called from loop() V1.04
 					 /*
 					 CREG register 10 mogelijke posities 0-9
@@ -227,22 +234,12 @@ void DCCLOOP() { //called from loop() V1.04
 	int b; //teller en flag voor new command helaas hele byte?
 	byte part;
 	if (bitRead(GPIOR2, 1) == false && bitRead(IORegist, 3) == false) { //nieuw command gevraagt, ioregist,3 voorkomt zenden DCC tijdens zenden LCD text.
-
-		if (millis() - CP > 10) {//10ms pauze between commands
+		if (millis() - CP > 5) {//5ms pauze between commands
 			CP = millis();
 		b = 0;
 		nc = 0;
-
 		while (b < 10) { //Loop testing Command array
 			if (bitRead(CREG[b], 7) == true) { //(a)    command gevonden
-
-					CREG[b]--; //CREG[b] = CREG[b] - 1; //verlaagt de counter. 
-					part = CREG[b];
-					part=part << 4;
-					part= part >> 4;
-					if (part < 1) bitClear(CREG[b], 7);
-
-
 				if (bitRead(CREG[b], 6) == true) {
 					//CV command
 					BT = 6;
@@ -265,6 +262,11 @@ void DCCLOOP() { //called from loop() V1.04
 					CBYTE[4] = 0;
 					CBYTE[5] = 0;
 				}
+				CREG[b]--; //CREG[b] = CREG[b] - 1; //verlaagt de counter. 
+				part = CREG[b];
+				part = part << 4;
+				part = part >> 4;
+				if (part < 1) bitClear(CREG[b], 7);
 				b = 10; //uitspingen als command is gevonden
 				nc = 1;
 		} //Free register CREG bit 7
@@ -302,148 +304,12 @@ void DCCLOOP() { //called from loop() V1.04
 					BC++;
 				}
 			}
-			//if (nc==1) Serial.println(BC);
 		}
 		else {// BC > BT Geen byte meer te verzenden 
 			if (bitRead(GPIOR2, 3) == false) bitSet(GPIOR2, 2); //laatste byte is doorgegeven, alleen zetten als laatste byte in interrupt nog false is
 		}
 	}
 }
-//****************************
-
-//*********************
-void DCCLOOP_old() { //called from loop() V1.03
-	/*
-	CREG register 10 mogelijke posities 0-9
-	bit7 true=bezet false=vrij
-	bit6 True = CV  false=bediening
-	bit5 timer
-	bit4 timer
-	bit3
-	bit2 count aantal te verzenden msb
-	bit1 count aantal te verzenden 
-	bit0 count aantal te verzenden lsb
-	*/
-	static byte CBYTE[6]; //static geheugen voor het actieve Commando, switch modes uses 3, CV mode uses 6
-	int b; //teller en flag voor new command helaas hele byte?
-	byte part;
-	if (bitRead(GPIOR2, 1) == false && bitRead(IORegist,3)==false) { //nieuw command gevraagt, ioregist,3 voorkomt zenden DCC tijdens zenden LCD text.
-		b = 0;
-		nc = 0;
-		while (b < 10) { //Loop testing Command array
-			if (bitRead(CREG[b], 7) == true) { //(a)    command gevonden
-errcount++;
-
-				
-
-				if (bitRead(CREG[b], 5) == true) { //(b) Timerbit
-
-
-					bitClear(CREG[b], 5);
-					bitClear(CREG[b], 4); //reset de pauze timer
-
-
-
-					CREG[b]--; //CREG[b] = CREG[b] - 1; //verlaagt de counter. 
-
-					if (bitRead(CREG[b], 6) == true) {
-						//CV command
-
-					BT = 6;
-					CBYTE[0] = CMSB[b];
-					CBYTE[1] = CLSB[b];
-					CBYTE[2] = CV1[b];
-					CBYTE[3] = CV2[b];
-					CBYTE[4] = CV3[b];
-					CBYTE[5]= CERROR[b];
-					}
-					else {
-						//switchcommand
-
-					BT = 3; //send 3 bytes
-					CBYTE[0] = CMSB[b];
-					CBYTE[1] = CLSB[b];
-					CBYTE[2] = CERROR[b];
-					//version 1.04
-					CBYTE[3] = 0;
-					CBYTE[4] = 0;
-					CBYTE[5] = 0;
-					}
-
-					b = 10; //uitspingen als command is gevonden
-					nc = 1;
-					part = CREG[b];
-					part = part << 4;
-					if (part == 0) CREG[b] = B00000000; //creg altijd vrij geven
-
-
-				}
-				else { //(b) timerbit5 = false
-					/*
-					Preg(0) staat op timer 2 dit proces is denk ik te traag waardoor een ecos via de sniffer de reeks van commandoos als verschillende commandoos vertaald
-					dit aanpassen met een standaard timerlus gebaseerd op de ingebouwde timer 1 dus micros of millis.
-
-					met millis en micros gaat het het niet worden.
-					Proberen met een 'teller' op timer 1
-					
-					*/
-					//V1.03
-
-					//if(micros()-DCCtime>4){
-					//	DCCtime = micros();
-
-					if (bitRead(PREG, 0) == true) { //Slow timer clock ..? Deze clock aanpassen gaat denk ik te langzaam, gewoon met microos?
-						//CREG[b] |= (1 << 5); //bitSet(CREG[b], 5); V1.03		
-						
-						CREG[b] |= (1 << 4); // bitSet(CREG[b], 4);
-					}
-					else { //timer laag
-						if (bitRead(CREG[b], 4) == true) CREG[b] |= (1 << 5); //bitSet(CREG[b], 5);
-					}
-				}
-			} //(a) register free
-
-			b++;
-
-		}
-		if (nc == 0) {
-			BT = 3;
-			CBYTE[0] = B11111111; //laad idle command
-			CBYTE[1] = B00000000;
-			CBYTE[2] = B11111111;
-		}
-		GPIOR0 = CBYTE[0];  //laad eerste byte van command
-		GPIOR1 = CBYTE[1]; //laad tweede byte van command
-		BC = 2; //eerste twee bytes geladen
-		bitClear(GPIOR2, 4); //clear flag byte free (dus niet meer vrij)
-		bitClear(GPIOR2, 5); //Clear flag byte free
-		GPIOR2 |= (1 << 1);  //COMMAND READY naar waar
-	}
-	else { //geen nieuw commando nodig maar misschien wel een nieuw BYTE
-
-		if (BC <= BT) { //geen Bytes meer te verzenden, anders check het NIET acieve register of het vrij is.
-			if (bitRead(GPIOR2, 6) == false) { //Register GPIOR0 = actieve register   //check of register vrij is:
-				if (bitRead(GPIOR2, 5) == true) { //alleen als BYte vrij is
-					GPIOR1 = CBYTE[BC]; // laad volgende byte uit command //CBYTE[2]; //Laad Byte3 van command //if (nc == 1) SHOWBYTE(GPIOR1); *****18aug2017***
-					bitClear(GPIOR2, 5); //Register GPIOR1 is nu niet meer vrij
-					BC++;
-				}
-			}
-			else { //Register GPIOR1= actieve register, dus de andere vullen 
-				if (bitRead(GPIOR2, 4) == true) { //Alleen als bytefree true is					
-					GPIOR0 = CBYTE[BC];//laad volgend byte uit command //CBYTE[2]; ***AANPASSING 18AUG2017	
-					bitClear(GPIOR2, 4); //Register GPIOR0 is nu niet meer vrij
-					BC++;
-				}
-			}
-			//if (nc==1) Serial.println(BC);
-		}
-		else {// BC > BT Geen byte meer te verzenden 
-			if (bitRead(GPIOR2, 3) == false) bitSet(GPIOR2, 2); //laatste byte is doorgegeven, alleen zetten als laatste byte in interrupt nog false is
-		}
-	}
-}
-//****************************
 ISR(TIMER2_COMPB_vect) { //timer interupt timed en start de 'langzame' events. 
 
 //PREG ^= (1 << 0); //bit0 in register PREG is timer op ongeveer een 4ms. V1.04 kan weg
@@ -457,7 +323,6 @@ lcdswitch();
 SLOWEVENTS();
 if (bitRead(PrgRegist, 4) == true)is(); //stand switches naar beginstand. 
 }
-
 void lcdtxt(int pm) { //schrijft texten naar lcd
 	switch (pm){
 	case 0:
@@ -864,9 +729,11 @@ static int adrs; //dcc adres actief switch
 				//Serial.println("nu dus cv kiezen");
 				if (bitRead(PrgRegist, 0) == true) { //inc
 					CVnmem++;
+					if (CVnmem > 1023)CVnmem = 0;
 				}
 				else { //dec
 					CVnmem--;
+					if (CVnmem < 1)CVnmem = 1023;
 				}
 				lcdrefresh = 1;
 				break;
@@ -1502,9 +1369,12 @@ void Switched(byte k, byte r) {//handles switches
 				PMmem = 0;	
 				l1 = "Knop: ";
 				l1.concat(programSw);
+
 			if (bitRead(SW2[programSw], 5) == true) { //moment switch
 				if (bitRead(r, i) == true) { //found switch has become true//***
 					SwitchState[CColums] ^= (1 << i); //zet on/off invert, voor deze schakelaar
+					DCC(i);	//creates DCC commands	
+
 				} // switch become true		
 			}
 			else { //continue switch
@@ -1515,9 +1385,10 @@ void Switched(byte k, byte r) {//handles switches
 				else {
 					bitClear(SwitchState[CColums], i);
 				}
+				DCC(i);	//creates DCC commands	
 			}
 			leds(i); //sets led status
-			DCC(i);	//creates DCC commands		
+			//DCC(i);	//creates DCC commands		
 		}//found switch status changed
 	}
 	bitClear(PrgRegist, 3); //reset CV programmode	
@@ -1546,13 +1417,14 @@ void DCC(int i) { //creates DCC commands i=switch in row
 			
 			CREG[c] |= (1 << 7); //bitSet(CREG[c], 7); //claim dit command geheugen			
 			bitClear(CREG[c], 6);//command voor bediening (true is voor CV zenden)
-			CREG[c] |= (1 << 3);//Count aantal keren zenden
+			CREG[c] |= (1 << 2);//command count 4
 			
 			
 			CMSB[c] = DCCmsb();
 			CLSB[c] = DCClsb();
 			if (bitRead(SW2[programSw], 3) == true) { //both channels on 1 switch
-				CLSB[c] |= (1 << 3);//always on						
+				CLSB[c] |= (1 << 3);//always on	
+				//if switchstate =true then channel R else channel L bit CLSB,0 is allready false then
 				if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 0); //switch channel			
 			}
 			else { //only 1 channel on switch
@@ -1563,11 +1435,12 @@ void DCC(int i) { //creates DCC commands i=switch in row
 				}
 				else { //apart
 					if (bitRead(SW2[programSw], 0) == true) CLSB[c] |= (1 << 0); //select channel
-					if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 3); //channel on/off
+					if (bitRead(SwitchState[CColums], i) == true) CLSB[c] |= (1 << 3); // on/off
 				}
 			}
 			CERROR[c] = CMSB[c] ^ CLSB[c]; //xor bytes
 			c = 10;
+
 		}
 		c++; //Als geen vrij commandplek wordt gevonden, bij volgende doorloop wordt opnieuw gezocht.
 	}
@@ -1576,19 +1449,28 @@ void CV() { //creates CV commands
 	
 	bitSet(PrgRegist, 3); //CV mode needed for creating byte 2 of dcc command
 	int c = 0;
+	int temp;
 	while (c < 10) { //voorlopig met 10 'registers 'voor commands werken
-		//errcount++;
-		if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
 
+		if (bitRead(CREG[c], 7) == false) { //vrije command, adres=( kolom*8 + rij) command staat in eeprom byte adres*2 en adres*2 +1
 
 			CREG[c] |= (1 << 7); //claim dit command geheugen
 
 			CREG[c] |= (1 << 6); //command true is voor CV zenden
-			CREG[c] |= (1 << 3); //zet uitvoer counter op 1.Twee keer zenden.
+			CREG[c] |= (1 << 2); //command counter to 4
 
 			CMSB[c] = DCCmsb(); //make first two adress bytes, programsw is allready known
 			CLSB[c] = DCClsb();
 			CV1[c] = B11101100;
+			
+			//CV number can be up to 1024
+			temp = CVnmem;
+			if (temp - 512 > 0) {
+				CV1[c] |= (1 << 1);
+				temp = temp - 512;
+			}
+			if (temp - 255 > 0)CV1[c] |= (1 << 0);
+			
 			CV2[c] = CVnmem;
 			CV3[c] = CVvmem;
 			CERROR[c] = CMSB[c] ^ CLSB[c] ^ CV1[c] ^ CV2[c] ^ CV3[c]; //xor bytes
@@ -1789,7 +1671,7 @@ void loop() {
 		//if (bitRead(PrgRegist, 4) == true)is(); //stand switches naar beginstand. 
 		tijd = millis();
 	}
-
+	/*
 	//temp
 	if (millis() - counttijd > 3000) {
 			Serial.print("count:  ");
@@ -1797,7 +1679,7 @@ void loop() {
 			errcount = 0;
 			counttijd = millis();
 	}
-
+*/
 
 }
 
