@@ -14,13 +14,15 @@ een nog niet gedefinieerd dcc kanaal = dus altijd adres 1024 (256-4)
 */
 
 //versie
-String versie = String(5)="1.04";
+String versie = String(5)="1.05";
 /*
 versie 1.04 aanpassingen
 Void DCCloop aangepast, command teller en timer veranderd dus hoe vaak en hoe sne achter elkaar de commando's
 In DCC aanpassingen gemaakt zodat het loslaten van een drukknop geen commando's meer verstuurt
 Aantal te verzenden CV nummers aangepast, volgens protocol mag dit tot CV nummer 1024 
 Resultaat nog niet perfect maar wel veel stabieler. 
+Version V1.05
+decoderadressen 64 128 en 256? werkte niet goed. dit aamgepast in dccmsb en dcclsb
 */
 
 
@@ -38,7 +40,7 @@ byte SwitchChanged;
 byte SwitchState[8];
 byte CColums = 0;
 byte waarom; //Nodig, compiler issue
-byte SW1[255]; //byte1 switch data (8 bits adres)
+byte SW1[255]; //byte1 switch data (8 bits adres)255
 byte SW2[255]; //byte2 switch data 
 /*
 bit7 Opstart state true =uit, false = aan.
@@ -775,7 +777,9 @@ byte DCCmsb() {
 	byte msb = SW1[programSw];
 	bitSet(msb, 7);
 	bitClear(msb, 6);
+
 	msb++; //DCC adres 0 bestaat niet, dus Hex00 wordt Hex01 
+	if (msb ==B11000000)msb = B10000000;
 	return msb;
 }
 byte DCClsb() {
@@ -784,17 +788,25 @@ byte DCClsb() {
 	/*
 	bit7 not used
 	bit6 not used
-	bit5 switch continue of puls
-	bit4 dcc continue of puls
+	bit5 adresbit 8
+	bit4 adresbit 7
 	bit3 both=false single=true (standaard 0)
 	bit2 welke decoder van de 4 bit 1
 	bit1 welke decoder van de 4 bit 0
 	bit0= welke van het paar. True=afslaan, false is rechtdoor
 	*/
 
-	byte lsb = 192; //set bit7,6 adressbit 9 not used. 
-		if (bitRead(SW1[programSw], 7) == false) bitSet(lsb, 5); //adresbit 8 (inverted, one complement)
-		if (bitRead(SW1[programSw], 6) == false) bitSet(lsb, 4); //adresbit 7
+	//decoder adres 0 does not exist.
+	//Decoderadres = 1 higher then value in SW1 
+	//So we have to increment SW1 to calculate the values for bit 5 and bit 4 ( adressbits 7 and 8) of the lsb
+
+	byte lsb = 0; //set bit7,6 adressbit 9 not used. 
+	byte sw;
+	sw = SW1[programSw] + 1;
+	if (bitRead(sw, 7) == false) bitSet(lsb, 5); //adresbit 8 (inverted, one complement)
+	if (bitRead(sw, 6) == false) bitSet(lsb, 4); //adresbit 7
+	lsb |= (1 << 7);
+	lsb |= (1 << 6);
 		
 		if (bitRead(PrgRegist, 3) == false) {//only switch mode, CV mode bits 3-0 false		
 		//bitSet(lsb, 3); //on/off	in switched
@@ -805,7 +817,6 @@ byte DCClsb() {
 		//}
 		//bit 0 TIJDELIJK ff false stellen
 		}
-
 	return lsb;
 }
 void txtpoort() { //txt voor l2 aansturing 
